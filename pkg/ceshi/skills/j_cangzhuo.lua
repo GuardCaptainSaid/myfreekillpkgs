@@ -55,4 +55,24 @@ j_cangzhuo:addEffect(fk.EventPhaseEnd, {
   end,
 })
 
+-- 测试：藏拙弃牌检测（弃牌 → 标记；未弃牌 → 弃牌阶段结束摸一张）
+j_cangzhuo:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_cangzhuo.name)
+  end)
+
+  FkTest.runInRoom(function()
+    me.phase = Player.Discard
+    local c = room:printCard("slash")
+    room:obtainCard(me, {c}, true, fk.ReasonDraw, me, "test")
+    room:throwCard({c.id}, "test", me, me)
+    lu.assertEquals(me:getMark("j_cangzhuo_discarded-turn"), 1, "弃牌后应记录已弃置")
+
+    room:setPlayerMark(me, "j_cangzhuo_discarded-turn", 0)
+    local n = #me:getCardIds("h")
+    room.logic:trigger(fk.EventPhaseEnd, me, {})
+    lu.assertEquals(#me:getCardIds("h"), n + 1, "未弃牌时弃牌阶段结束应摸一张")
+  end)
+end)
+
 return j_cangzhuo
