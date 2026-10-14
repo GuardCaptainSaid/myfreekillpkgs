@@ -97,4 +97,83 @@ m_qince:addAI(Fk.Ltk.AI.newInvokeStrategy {
   think = Util.TrueFunc,
 })
 
+-- 测试：有手牌分支——摸一张并交给失去最后手牌的角色至少两张
+m_qince:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, c2, c3, cDraw
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, m_qince.name)
+    c1 = room:printCard("slash", Card.Spade, 5)
+    c2 = room:printCard("peach", Card.Heart, 6)
+    c3 = room:printCard("dismantlement", Card.Club, 7)
+    cDraw = room:printCard("peach", Card.Diamond, 8) -- 置于牌堆顶，摸牌时获得
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    -- comp2 只有一张手牌，将其打出/弃置后失去最后手牌
+    room:obtainCard(comp2, { c2 }, true, fk.ReasonDraw, comp2, "test")
+    room:obtainCard(comp2, { c3 }, true, fk.ReasonDraw, comp2, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    -- comp2 弃掉两张手牌 → 失去最后手牌
+    FkTest.setNextReplies(me, { "1", FkTest.ReplyChooseCards({ c1.id, cDraw.id }) })
+    local moveData = {
+      {
+        from = comp2,
+        to = nil,
+        toArea = Card.DiscardPile,
+        moveReason = fk.ReasonDiscard,
+        moveInfo = {
+          { cardId = c2.id, fromArea = Card.PlayerHand },
+          { cardId = c3.id, fromArea = Card.PlayerHand },
+        },
+      },
+    }
+    room.logic:trigger(fk.AfterCardsMove, comp2, moveData)
+    -- me 原有1张手牌 + 摸1 = 2，交出2张 → 手牌0
+    lu.assertEquals(#me:getCardIds("h"), 0, "摸一张后应交出两张")
+    lu.assertEquals(#comp2:getCardIds("h"), 2, "失去手牌的角色应获得至少两张牌")
+  end)
+end)
+
+-- 测试：没有手牌分支——视为拥有空城，直到自己的下个回合移除
+m_qince:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, m_qince.name)
+    c1 = room:printCard("slash", Card.Spade, 5)
+    room:obtainCard(comp2, { c1 }, true, fk.ReasonDraw, comp2, "test")
+    -- me 无手牌
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1" })
+    -- comp2 打出最后一张手牌（杀）
+    local moveData = {
+      {
+        from = comp2,
+        to = nil,
+        toArea = Card.DiscardPile,
+        moveReason = fk.ReasonUse,
+        moveInfo = {
+          { cardId = c1.id, fromArea = Card.PlayerHand },
+        },
+      },
+    }
+    room.logic:trigger(fk.AfterCardsMove, comp2, moveData)
+    lu.assertTrue(me:hasSkill("kongcheng"), "没有手牌时应视为拥有空城")
+    lu.assertEquals(me:getMark(QINCE_KONGCHENG), 1, "应记录临时空城标记")
+    -- 空城生效：comp2 不能用杀/决斗指定无手牌的 me
+    local slash = Fk:cloneCard("slash")
+    lu.assertFalse(comp2:canUseTo(slash, me), "空城应禁止杀指定")
+    -- 自己回合开始 → 移除空城
+    FkTest.runInRoom(function()
+      local tdata = { who = me, reason = "game_rule" }
+      room.logic:trigger(fk.TurnStart, me, tdata)
+    end)
+    lu.assertFalse(me:hasSkill("kongcheng"), "自己回合开始应移除临时空城")
+    lu.assertEquals(me:getMark(QINCE_KONGCHENG), 0, "标记应清除")
+  end)
+end)
+
 return m_qince

@@ -198,4 +198,69 @@ m_buzhen:addAI(Fk.Ltk.AI.newInvokeStrategy {
   think = Util.TrueFunc,
 })
 
+-- 测试：回合开始背面朝上时发动布阵——弃牌、展示牌堆底、获得基本牌、非基本放置、造成伤害后重置
+m_buzhen:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, c2, c3
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, m_buzhen.name)
+    me.faceup = false
+    c1 = room:printCard("slash", Card.Spade, 5)
+    c2 = room:printCard("peach", Card.Heart, 6)
+    c3 = room:printCard("dismantlement", Card.Club, 7)
+    -- 将 c1/c2/c3 放入牌堆底：清空重建牌堆，末尾即底部
+    room.draw_pile = {}
+    table.insert(room.draw_pile, c1.id)
+    table.insert(room.draw_pile, c2.id)
+    table.insert(room.draw_pile, c3.id)
+    room:obtainCard(me, { room:printCard("slash").id }, true, fk.ReasonDraw, me, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    -- askToSkillInvoke(yes) → 放置选择
+    -- c1/c2 是基本牌自动获得；c3 是锦囊（可对 comp2 使用）→ 选"使用"
+    FkTest.setNextReplies(me, {
+      "1", -- 发动布阵
+      "m_buzhen:use", -- c3 使用
+      FkTest.ReplyChoosePlayer({ comp2 }),
+      "", -- 重置询问：取消
+    })
+    local tdata = { who = me, reason = "game_rule" }
+    room.logic:trigger(fk.PreTurnStart, me, tdata)
+    lu.assertEquals(#me:getCardIds("h"), 2, "应获得两张基本牌（杀+桃）")
+    lu.assertEquals(comp2.hp, 2, "使用拆牌对 comp2 造成一点伤害（无手牌响应）")
+    lu.assertTrue(me:getMark("m_buzhen_damaged") == 0, "不重置则标记应清除")
+    lu.assertFalse(me.faceup, "选择不重置则仍背面朝上")
+  end)
+end)
+
+-- 测试：X 计算（存活不足3→3；势力相同→+2），非基本牌可置牌堆底
+m_buzhen:addTest(function(room, me)
+  local c1
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, m_buzhen.name)
+    me.faceup = false
+    c1 = room:printCard("dismantlement", Card.Club, 7)
+    room.draw_pile = {}
+    table.insert(room.draw_pile, c1.id)
+    -- 保证场上势力相同
+    for _, p in ipairs(room.players) do
+      p.kingdom = "shu"
+    end
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, {
+      "1",
+      "m_buzhen:bottom", -- 置牌堆底
+      "", -- 重置询问取消
+    })
+    local tdata = { who = me, reason = "game_rule" }
+    room.logic:trigger(fk.PreTurnStart, me, tdata)
+    lu.assertEquals(#me:getCardIds("h"), 0, "非基本牌不应被获得")
+    -- 牌应在牌堆底（draw_pile 末尾）
+    lu.assertEquals(room.draw_pile[#room.draw_pile], c1.id, "锦囊应置于牌堆底")
+  end)
+end)
+
 return m_buzhen

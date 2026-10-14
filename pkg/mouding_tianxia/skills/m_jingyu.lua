@@ -64,4 +64,56 @@ m_jingyu:addAI(Fk.Ltk.AI.newInvokeStrategy {
   think = Util.TrueFunc,
 })
 
+-- 测试：受伤时与伤害来源拼点，赢则防止伤害、双方翻面、来源获得我的拼点牌
+m_jingyu:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, c2
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, m_jingyu.name)
+    c1 = room:printCard("slash", Card.Spade, 9)
+    c2 = room:printCard("peach", Card.Heart, 2)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    room:obtainCard(comp2, { c2 }, true, fk.ReasonDraw, comp2, "test")
+    me.faceup = true
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1", FkTest.ReplyChooseCards({ c1.id }) })
+    FkTest.setNextReplies(comp2, { FkTest.ReplyChooseCards({ c2.id }) })
+    local dmg = DamageData:new{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    room.logic:trigger(fk.DamageInflicted, me, dmg)
+    lu.assertEquals(dmg.damage, 0, "拼点赢应防止伤害")
+    lu.assertTrue(dmg.prevented, "应标记为防止")
+    lu.assertFalse(me.faceup, "我应翻面")
+    lu.assertFalse(comp2.faceup, "伤害来源应翻面")
+    lu.assertEquals(#comp2:getCardIds("h"), 1, "伤害来源应获得我的拼点牌")
+    lu.assertTrue(room:getTag("m_jingyu_turn_used"), "应记录本回合已使用")
+  end)
+end)
+
+-- 测试：拼点输则不防止伤害
+m_jingyu:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, c2
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, m_jingyu.name)
+    room:setTag("m_jingyu_turn_used", nil)
+    c1 = room:printCard("slash", Card.Spade, 2)
+    c2 = room:printCard("peach", Card.Heart, 9)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    room:obtainCard(comp2, { c2 }, true, fk.ReasonDraw, comp2, "test")
+    me.faceup = true
+    comp2.faceup = true
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1", FkTest.ReplyChooseCards({ c1.id }) })
+    FkTest.setNextReplies(comp2, { FkTest.ReplyChooseCards({ c2.id }) })
+    local dmg = DamageData:new{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    room.logic:trigger(fk.DamageInflicted, me, dmg)
+    lu.assertEquals(dmg.damage, 1, "拼点输不应防止伤害")
+    lu.assertTrue(me.faceup, "不应翻面")
+  end)
+end)
+
 return m_jingyu
