@@ -149,4 +149,56 @@ j_zishi:addAI(Fk.Ltk.AI.newInvokeStrategy {
   think = Util.TrueFunc,
 })
 
+-- 测试：使用转化牌时可令其额外指定一个目标（伤害牌伤害+1）
+j_zishi:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zishi.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local slash = Fk:cloneCard("slash")
+    slash.skillName = j_zishi.name -- 转化杀
+    -- askToChoice 的回复为数组包装；askToSkillInvoke 为 "1"
+    FkTest.setNextReplies(me, { "1", { "j_zishi:extra" } })
+    FkTest.setNextReplies(comp2, { FkTest.ReplyChoosePlayer({ comp3 }) })
+    local use = UseCardData:new{ from = comp2, card = slash, tos = { me } }
+    room.logic:trigger(fk.CardUsing, comp2, use)
+    lu.assertEquals(#use.tos, 2, "应额外指定一个目标")
+    -- 伤害+1 校验：标记生效
+    local dmg = DamageData:new{ from = comp2, to = comp3, damage = 1, damageType = fk.NormalDamage, card = slash }
+    room.logic:trigger(fk.DamageCaused, comp2, dmg)
+    lu.assertEquals(dmg.damage, 2, "谘势标记的伤害牌伤害应+1")
+  end)
+end)
+
+-- 测试：弃一张牌令其本回合无法使用同类型牌
+j_zishi:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zishi.name)
+    c1 = room:printCard("dismantlement", Card.Spade, 5) -- 锦囊
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    local trick = Fk:cloneCard("ex_nihilo")
+    trick.skillName = "w_jizhi" -- 转化牌
+    -- data.tos 需非空，使"额外目标"选项出现（否则 askToChoice 不发询问直接返回）
+    FkTest.setNextReplies(me, { "1", { "j_zishi:forbid" }, FkTest.ReplyDiscard({ c1.id }) })
+    local use = UseCardData:new{ from = comp2, card = trick, tos = { me } }
+    room.logic:trigger(fk.CardUsing, comp2, use)
+    local forbid_type = comp2:getMark("@@j_zishi_forbid")
+    lu.assertEquals(forbid_type, Card.TypeTrick, "应记录禁用类型")
+    -- comp2 本回合不能对 me 使用锦囊
+    local dis = Fk:cloneCard("dismantlement")
+    lu.assertFalse(comp2:canUseTo(dis, me), "被禁类型牌应无法指定目标")
+    -- 其他类型不受影响
+    local slash = Fk:cloneCard("slash")
+    lu.assertTrue(comp2:canUseTo(slash, me), "非禁类型牌不受影响")
+  end)
+end)
+
 return j_zishi

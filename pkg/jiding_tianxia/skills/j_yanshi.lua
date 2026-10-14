@@ -85,4 +85,37 @@ j_yanshi:addEffect(fk.EventPhaseStart, {
   end,
 })
 
+-- 测试：演势摸一张（牌堆顶）并使用 → 视为未发动；不使用 → 消耗限次
+j_yanshi:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_yanshi.name)
+  end)
+
+  -- 场景A：摸牌后使用该牌（模拟：使用的牌含演势摸到的牌）→ 标记回 0
+  FkTest.runInRoom(function()
+    room:setPlayerMark(me, "j_yanshi_used", 1)
+    local top = room:getNCards(1, "top")
+    local drawn = room:getTag("j_yanshi_drawn") or {}
+    drawn[top[1]] = true
+    room:setTag("j_yanshi_drawn", drawn)
+    local vcard = Fk:cloneCard(Fk:getCardById(top[1]).name)
+    vcard:addSubcard(top[1])
+    local use = UseCardData:new{ from = me, card = vcard, tos = { comp2 } }
+    room.logic:trigger(fk.CardUseFinished, me, use)
+    lu.assertEquals(me:getMark("j_yanshi_used"), 0, "使用摸到的牌应视为未发动")
+  end)
+
+  -- 场景B：摸牌后不使用 → 限次消耗
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "j_yanshi:bottom" })
+    -- 直接执行 active 效果：手动触发 onUse
+    local skel = Fk.skills[j_yanshi.name]:getSkeleton()
+    local eff = skel.effects[1]
+    eff:onUse(room, { from = me })
+    lu.assertEquals(me:getMark("j_yanshi_used"), 1, "未使用摸到的牌应消耗限次")
+    lu.assertEquals(#me:getCardIds("h"), 1, "应从牌堆底摸一张")
+  end)
+end)
+
 return j_yanshi

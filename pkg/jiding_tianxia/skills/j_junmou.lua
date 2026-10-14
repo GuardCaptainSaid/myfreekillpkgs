@@ -93,4 +93,55 @@ j_junmou:addEffect(fk.Damaged, {
   end,
 })
 
+-- 测试：峻谋受伤害后调整手牌并视为使用无距离杀
+j_junmou:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_junmou.name)
+  end)
+
+  FkTest.runInRoom(function()
+    -- me 当前 3 体力；给 comp2 发 5 张手牌、comp3 0 张
+    local cards = {}
+    for i = 1, 5 do
+      cards[i] = room:printCard("slash", Card.Spade, i)
+    end
+    room:obtainCard(comp2, cards, true, fk.ReasonDraw, comp2, "test")
+
+    -- 触发伤害：comp2 打 me 1 点
+    FkTest.setNextReplies(me, { "1", FkTest.ReplyChoosePlayer({ comp2, comp3 }) })
+    FkTest.setNextReplies(comp2, { FkTest.ReplyChoosePlayer({ comp3 }) })
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+
+    -- me（测试房曹操 4 血）受 1 伤后体力 3 → comp2 弃到 3 张、comp3 摸到 3 张
+    lu.assertEquals(me.hp, 3, "me 应受 1 点伤害")
+    lu.assertEquals(#comp2:getCardIds("h"), 3, "comp2 手牌应弃至 me 体力值")
+    lu.assertEquals(#comp3:getCardIds("h"), 3, "comp3 手牌应摸至 me 体力值")
+    -- comp2（失去牌者）对 comp3（获得牌者）视为使用杀 → comp3 未响应受伤
+    lu.assertEquals(comp3.hp, 3, "comp3 应受到视为使用的杀造成的一点伤害")
+  end)
+end)
+
+-- 测试：不发动峻谋时无任何效果
+j_junmou:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_junmou.name)
+    local cards = {}
+    for i = 1, 4 do
+      cards[i] = room:printCard("slash", Card.Club, i)
+    end
+    room:obtainCard(comp2, cards, true, fk.ReasonDraw, comp2, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "" })          -- 拒绝发动
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(#comp2:getCardIds("h"), 4, "拒绝发动时 comp2 手牌不变")
+    lu.assertEquals(comp3.hp, 4, "拒绝发动时 comp3 不受影响")
+  end)
+end)
+
 return j_junmou

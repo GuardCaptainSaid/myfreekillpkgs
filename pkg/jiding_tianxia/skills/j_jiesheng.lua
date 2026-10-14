@@ -56,4 +56,52 @@ j_jiesheng:addEffect(fk.RoundEnd, {
   end,
 })
 
+-- 测试：其他角色受到伤害时代受并防止原伤害
+j_jiesheng:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jiesheng.name)
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1" })
+    room:damage{ from = comp2, to = comp3, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(comp3.hp, 4, "原伤害应被防止")
+    lu.assertEquals(me.hp, 3, "使用者应受到一点无来源伤害")
+    lu.assertEquals(me:getMark("j_jiesheng_round"), 1, "应记录本轮发动")
+  end)
+end)
+
+-- 测试：本轮未发动时轮末恢复 1 点体力
+j_jiesheng:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jiesheng.name)
+    room:damage{ to = me, damage = 1, damageType = fk.NormalDamage }  -- 先受 1 伤（无来源）
+  end)
+
+  FkTest.runInRoom(function()
+    lu.assertEquals(me.hp, 3, "前置：me 应处于受伤状态")
+    local use = UseCardData:new{ from = me, card = Fk:cloneCard("slash"), tos = {} }
+    room.logic:trigger(fk.RoundEnd, me, use)
+    lu.assertEquals(me.hp, 4, "本轮未发动应恢复 1 点体力")
+    lu.assertEquals(me:getMark("j_jiesheng_round"), 0, "轮末应重置本轮标记")
+  end)
+end)
+
+-- 测试：本轮已发动时轮末不恢复
+j_jiesheng:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jiesheng.name)
+    room:setPlayerMark(me, "j_jiesheng_round", 1)
+    room:damage{ to = me, damage = 1, damageType = fk.NormalDamage }
+  end)
+
+  FkTest.runInRoom(function()
+    local use = UseCardData:new{ from = me, card = Fk:cloneCard("slash"), tos = {} }
+    room.logic:trigger(fk.RoundEnd, me, use)
+    lu.assertEquals(me.hp, 3, "本轮已发动过不应恢复")
+  end)
+end)
+
 return j_jiesheng

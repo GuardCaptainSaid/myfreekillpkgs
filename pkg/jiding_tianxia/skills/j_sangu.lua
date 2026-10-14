@@ -62,4 +62,48 @@ j_sangu:addEffect(fk.EventPhaseStart, {
   end,
 })
 
+-- 测试：指定过我且距离1 → 觉醒；仅记录不满足条件不触发
+j_sangu:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, { j_sangu.name, "j_yinju" })
+  end)
+
+  -- 场景A：comp2 用杀指定 me → 记录；me 准备阶段距离1 → 觉醒
+  FkTest.runInRoom(function()
+    local slash = Fk:cloneCard("slash")
+    local use = UseCardData:new{ from = comp2, card = slash, tos = { me } }
+    room.logic:trigger(fk.TargetSpecified, me, use)
+    local t = room:getTag("j_sangu_targeted")
+    lu.assertTrue(t and t[comp2.id], "应记录指定过我的角色")
+
+    -- 模拟 me 的准备阶段（EventPhaseStart, phase=Start）
+    me.phase = Player.Start
+    FkTest.setNextReplies(me, { "1" })
+    room.logic:trigger(fk.EventPhaseStart, me, {})
+    lu.assertFalse(me:hasSkill("j_yinju"), "觉醒后应失去隐居")
+    lu.assertTrue(me:hasSkill(Fk.skills.j_zhiji.name), "觉醒后应获得智计")
+    me.phase = Player.Play
+  end)
+
+  -- 场景A2：直接验证 handleAddLoseSkills 的技能得失逻辑
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, "j_yinju")
+    room:handleAddLoseSkills(me, "-j_yinju|j_zhiji")
+    lu.assertFalse(me:hasSkill("j_yinju"), "handleAddLoseSkills 应能移除隐居")
+    lu.assertTrue(me:hasSkill(Fk.skills.j_zhiji.name), "handleAddLoseSkills 应能添加智计")
+  end)
+
+  -- 场景B：无人指定过我 → 准备阶段不触发
+  FkTest.runInRoom(function()
+    -- 重置状态（重新加回隐居、清除记录）
+    room:setTag("j_sangu_targeted", nil)
+    room:handleAddLoseSkills(me, "j_yinju")
+    me.phase = Player.Start
+    room.logic:trigger(fk.EventPhaseStart, me, {})
+    lu.assertTrue(me:hasSkill("j_yinju"), "无人指定过我不应觉醒")
+    me.phase = Player.Play
+  end)
+end)
+
 return j_sangu

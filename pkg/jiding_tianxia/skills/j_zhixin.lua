@@ -187,4 +187,87 @@ j_zhixin:addEffect(fk.CardUseFinished, {
   end,
 })
 
+-- 测试：阳形态转化非基本牌为基本牌；阴形态转化基本牌为锦囊
+j_zhixin:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhixin.name)
+    local c1 = room:printCard("dismantlement", Card.Spade, 3)   -- 非基本（锦囊）
+    local c2 = room:printCard("slash", Card.Heart, 4)           -- 基本
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+    local skel = Fk.skills[j_zhixin.name]:getSkeleton()
+    local eff = skel.effects[1]
+
+    -- 阳形态：非基本牌可转基本牌
+    eff.interaction.data = "slash"
+    local card1 = eff:viewAs(me, { c1.id })
+    lu.assertNotNil(card1, "阳形态非基本牌应能转化为基本牌")
+    lu.assertEquals(card1.name, "slash")
+    lu.assertEquals(card1.type, Card.TypeBasic)
+
+    -- 阴形态：基本牌可转普通锦囊
+    eff.interaction.data = "dismantlement"
+    local card2 = eff:viewAs(me, { c2.id })
+    lu.assertNotNil(card2, "阴形态基本牌应能转化为普通锦囊")
+    lu.assertEquals(card2.name, "dismantlement")
+    lu.assertEquals(card2.type, Card.TypeTrick)
+  end)
+end)
+
+-- 测试：阳转化未造成伤害时出牌阶段结束视为未发动（形态翻回阳、限次不消耗）
+j_zhixin:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhixin.name)
+    -- 模拟：阳已使用 → 核心自动翻转形态为阴（SwithSkillPreName 标记 = 1）
+    local pre = MarkEnum.SwithSkillPreName .. j_zhixin.name
+    room:setPlayerMark(me, pre, 1)
+    room:setPlayerMark(me, "j_zhixin_damaged", 0)
+    room:setPlayerMark(me, "j_zhixin_yin_used", 0)
+    room:setPlayerMark(me, "j_zhixin_used", 0)
+    me.phase = Player.Play
+  end)
+
+  FkTest.runInRoom(function()
+    local use = UseCardData:new{ from = me, card = Fk:cloneCard("slash"), tos = {} }
+    room.logic:trigger(fk.EventPhaseEnd, me, use)
+    lu.assertEquals(me:getSwitchSkillState(j_zhixin.name), fk.SwitchYang, "未造成伤害应翻回阳形态")
+    lu.assertEquals(me:getMark("j_zhixin_used"), 0, "未造成伤害限次不消耗")
+  end)
+end)
+
+-- 测试：阳转化造成伤害时限次消耗且形态保持阴
+j_zhixin:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhixin.name)
+    local slash = room:printCard("slash", Card.Heart, 5)
+    room:obtainCard(me, { slash }, true, fk.ReasonDraw, me, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    local card = Fk:getCardById(me:getCardIds("h")[1])
+    card.skillName = j_zhixin.name
+    local dmg = DamageData:new{ from = me, to = comp2, damage = 1, damageType = fk.NormalDamage, card = card }
+    room.logic:trigger(fk.Damaged, comp2, dmg)   -- comp2 受智心牌伤害
+    lu.assertEquals(me:getMark("j_zhixin_used"), 1, "造成伤害后限次应消耗")
+    lu.assertEquals(me:getMark("j_zhixin_damaged"), 1, "应记录造成伤害")
+  end)
+end)
+
+-- 测试：阴转化锦囊结算完成且自身不是目标时，对一名目标角色造成伤害
+j_zhixin:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhixin.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local trick = Fk:cloneCard("dismantlement")
+    trick.skillName = j_zhixin.name
+    local use = UseCardData:new{ from = me, card = trick, tos = { comp2 } }
+    FkTest.setNextReplies(me, { FkTest.ReplyChoosePlayer({ comp2 }) })
+    room.logic:trigger(fk.CardUseFinished, me, use)
+    lu.assertEquals(comp2.hp, 3, "阴转化锦囊结算后应对目标造成一点伤害")
+  end)
+end)
+
 return j_zhixin

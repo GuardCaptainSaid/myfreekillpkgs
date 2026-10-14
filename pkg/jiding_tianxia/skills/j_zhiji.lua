@@ -75,4 +75,86 @@ j_zhiji:addEffect(fk.EventPhaseStart, {
   end,
 })
 
+-- 辅助：取某玩家的红牌
+local function redCardOf(p)
+  for _, id in ipairs(p:getCardIds("h")) do
+    if Fk:getCardById(id).color == Card.Red then return id end
+  end
+end
+
+-- 测试：红牌可当火攻、黑牌可当无懈可击；转化牌不可被响应
+j_zhiji:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhiji.name)
+    local c1 = room:printCard("slash", Card.Heart, 7)   -- 红牌
+    local c2 = room:printCard("jink", Card.Spade, 6)    -- 黑牌
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+  end)
+
+  -- 场景A：红牌 → 火攻
+  FkTest.runInRoom(function()
+    local skel = Fk.skills[j_zhiji.name]:getSkeleton()
+    local eff = skel.effects[1]
+    local hand = me:getCardIds("h")
+    local redCard = nil
+    for _, id in ipairs(hand) do
+      if Fk:getCardById(id).color == Card.Red then redCard = id break end
+    end
+    lu.assertNotNil(redCard, "应有红牌")
+    -- interaction 选择火攻
+    eff.interaction.data = "fire_attack"
+    lu.assertTrue(eff:cardFilter(me, redCard, {}, {}), "红牌应可当火攻")
+    local vcard = eff:viewAs(me, { redCard })
+    lu.assertNotNil(vcard, "应能转化出火攻")
+    lu.assertEquals(vcard.trueName, "fire_attack", "转化牌应为火攻")
+    lu.assertEquals(vcard.skillName, j_zhiji.name, "转化牌应带技能名")
+    -- 黑牌不能当火攻
+    local blackCard = nil
+    for _, id in ipairs(hand) do
+      if Fk:getCardById(id).color == Card.Black then blackCard = id break end
+    end
+    lu.assertFalse(eff:cardFilter(me, blackCard, {}, {}), "黑牌不能当火攻")
+  end)
+
+  -- 场景B：黑牌 → 无懈可击
+  FkTest.runInRoom(function()
+    local skel = Fk.skills[j_zhiji.name]:getSkeleton()
+    local eff = skel.effects[1]
+    eff.interaction.data = "nullification"
+    local blackCard = nil
+    for _, id in ipairs(me:getCardIds("h")) do
+      if Fk:getCardById(id).color == Card.Black then blackCard = id break end
+    end
+    lu.assertNotNil(blackCard, "应有黑牌")
+    lu.assertTrue(eff:cardFilter(me, blackCard, {}, {}), "黑牌应可当无懈可击")
+    local vcard = eff:viewAs(me, { blackCard })
+    lu.assertNotNil(vcard, "应能转化出无懈可击")
+    lu.assertEquals(vcard.trueName, "nullification", "转化牌应为无懈可击")
+    lu.assertFalse(eff:cardFilter(me, redCardOf(me), {}, {}), "红牌不能当无懈可击")
+  end)
+
+  -- 场景C：使用智计转化牌时，该牌不可被响应
+  FkTest.runInRoom(function()
+    room:setPlayerMark(me, "j_zhiji_used", 0)
+    local vcard = Fk:cloneCard("fire_attack")
+    vcard.skillName = j_zhiji.name
+    vcard:addSubcard(me:getCardIds("h")[1])
+    local use = UseCardData:new{ from = me, card = vcard, tos = { room.players[2] } }
+    room.logic:trigger(fk.PreCardUse, me, use)
+    lu.assertTrue(use.disresponsiveList ~= nil and #use.disresponsiveList > 0, "智计转化牌应不可被响应")
+  end)
+
+  -- 场景D：限次（使用后标记为1，不能再用；新回合重置）
+  FkTest.runInRoom(function()
+    local skel = Fk.skills[j_zhiji.name]:getSkeleton()
+    local eff = skel.effects[1]
+    room:setPlayerMark(me, "j_zhiji_used", 1)
+    lu.assertFalse(eff:enabledAtPlay(me), "使用后本回合不能再发动")
+    -- 回合开始重置
+    me.phase = Player.Play
+    room.logic:trigger(fk.EventPhaseStart, me, {})
+    lu.assertEquals(me:getMark("j_zhiji_used"), 0, "新回合应重置限次")
+  end)
+end)
+
 return j_zhiji

@@ -27,4 +27,20 @@ j_yinju:addEffect("distance", {
   end,
 })
 
+-- 测试：持有隐居时，与其他角色的距离应 +X
+j_yinju:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_yinju.name)
+    -- 测试环境无 RoundCount banner → X = 3 - 0 = 3
+    local X = 3 - (room:getBanner("RoundCount") or 0)
+    -- 座次 me->comp2->comp3（3人）距离1；有隐居时 me→comp2 距离应 +X
+    lu.assertEquals(me:distanceTo(comp2), math.max(1 + X, 1), "你到相邻角色距离应+X")
+    lu.assertEquals(comp2:distanceTo(me), math.max(1 + X, 1), "其他角色到你距离应+X")
+    -- comp2 与 comp3 之间无隐居 → 距离不受影响
+    lu.assertEquals(comp2:distanceTo(comp3), 1, "无隐居角色间距离应正常")
+  end)
+end)
+
 return j_yinju

@@ -68,4 +68,29 @@ j_zaoshi:addAI(Fk.Ltk.AI.newInvokeStrategy {
   end,
 })
 
+-- 测试：成为目标时可换牌（手牌减少1并摸回1，净持牌数不变）
+j_zaoshi:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zaoshi.name)
+    local c1 = room:printCard("slash", Card.Spade, 5)
+    local c2 = room:printCard("jink", Card.Heart, 1)
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    local hand = me:getCardIds("h")
+    local choose = hand[1]
+    local before = #me:getCardIds("h")
+    local pileBefore = #room.draw_pile
+    FkTest.setNextReplies(me, { "1", choose, "j_zaoshi:top", "j_zaoshi:bottom" })
+    local slash = Fk:cloneCard("slash")
+    local use = UseCardData:new{ from = comp2, card = slash, tos = { me } }
+    room.logic:trigger(fk.TargetSpecified, me, use)
+    local after = #me:getCardIds("h")
+    lu.assertEquals(after, before, "换牌后手牌数应不变")
+    lu.assertEquals(#room.draw_pile, pileBefore, "牌堆数量应不变（置入一张又摸一张）")
+  end)
+end)
+
 return j_zaoshi
