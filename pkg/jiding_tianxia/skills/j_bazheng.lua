@@ -142,4 +142,136 @@ j_bazheng:addEffect(fk.TargetSpecified, {
   end,
 })
 
+-- 测试：其他角色使用红色牌指定你为唯一目标（项二）
+j_bazheng:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_bazheng.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local red = room:printCard("slash", Card.Heart, 1)
+    room:obtainCard(me, { red }, true, fk.ReasonDraw, me, "test")
+
+    -- me 回复：选红桃 → 排列（红桃杀置于牌堆顶）
+    FkTest.setNextReplies(me, { { "log_heart" }, { { red.id }, {} } })
+    -- comp2 回复：决斗响应不出杀
+    FkTest.setNextReplies(comp2, { "" })
+
+    local sk = Fk.skills[j_bazheng.name]:getSkeleton()
+    local eff = nil
+    for _, spec in ipairs(sk.effect_spec_list) do
+      if spec[1] == fk.TargetSpecified then eff = spec[3] break end
+    end
+    local aim = {
+      from = comp2,
+      card = red,
+      to = me,
+      use = { from = comp2, tos = { me }, card = red },
+    }
+    eff:on_use({ room = room }, me, me, aim)
+
+    -- 技能语义：置顶的红桃杀被失去牌多者（me）摸回手里
+    lu.assertEquals(#me:getCardIds("h"), 1, "失去牌多者摸一张牌")
+    lu.assertTrue(table.contains(me:getCardIds("h"), red.id), "置顶的牌被摸回手中")
+    -- 决斗对失去牌少者（comp2）造成 1 点伤害
+    lu.assertEquals(comp2.hp, comp2.maxHp - 1, "决斗对失去牌少者造成伤害")
+  end)
+end)
+
+-- 测试：你使用红色牌指定其他角色为唯一目标（项一）
+j_bazheng:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_bazheng.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local red = room:printCard("slash", Card.Diamond, 1)
+    room:obtainCard(me, { red }, true, fk.ReasonDraw, me, "test")
+    -- 让对方也有一张同花色牌，制造 other_lost > 0
+    local red2 = room:printCard("peach", Card.Diamond, 1)
+    room:obtainCard(comp2, { red2 }, true, fk.ReasonDraw, comp2, "test")
+
+    FkTest.setNextReplies(me, { { "log_diamond" }, { { red.id, red2.id }, {} } })
+    FkTest.setNextReplies(comp2, { "" })
+
+    local sk = Fk.skills[j_bazheng.name]:getSkeleton()
+    local eff = nil
+    for _, spec in ipairs(sk.effect_spec_list) do
+      if spec[1] == fk.TargetSpecified then eff = spec[3] break end
+    end
+    local aim = {
+      from = me,
+      card = red,
+      to = comp2,
+      use = { from = me, tos = { comp2 }, card = red },
+    }
+    eff:on_use({ room = room }, me, me, aim)
+
+    lu.assertFalse(table.contains(me:getCardIds("h"), red.id), "你的该花色牌应被置于牌堆顶")
+    lu.assertFalse(table.contains(comp2:getCardIds("h"), red2.id), "目标的该花色牌应被置于牌堆顶")
+    lu.assertEquals(#me:getCardIds("h"), 0, "失去牌数相等时不摸牌")
+  end)
+end)
+
+-- 回归测试：回合开始的重置必须是静默 refresh。
+-- 一旦写回 on_use / on_cost 的触发形式，TriggerSkill:cost 会回退成 askToSkillInvoke，
+-- 于是在每个角色回合开始时都会弹「霸争：是否发动？」。
+j_bazheng:addTest(function(room, me)
+  local skel = Fk.skills[j_bazheng.name]:getSkeleton()
+  local eff
+  for _, spec in ipairs(skel.effect_spec_list) do
+    if spec[1] == fk.EventPhaseStart then eff = spec[3] break end
+  end
+  lu.assertNotIsNil(eff, "霸争：应存在 EventPhaseStart 效果")
+  lu.assertIsNil(eff.on_use, "回合开始的重置不得使用 on_use，否则会弹询问")
+  lu.assertIsNil(eff.on_cost, "回合开始的重置不得使用 on_cost")
+  lu.assertNotIsNil(eff.can_refresh, "回合开始的重置应走 can_refresh（静默）")
+  lu.assertNotIsNil(eff.on_refresh, "回合开始的重置应走 on_refresh（静默）")
+end)
+
+-- 回归测试：触发条件判定（can_trigger）
+-- ①其他角色用红牌指定其他角色（均非计孙策）→ 不得触发
+-- ②其他角色用红牌指定计孙策本人 → 项二触发
+-- ③计孙策用红牌指定其他角色 → 项一触发
+j_bazheng:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_bazheng.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local red = room:printCard("slash", Card.Heart, 1)
+
+    local sk = Fk.skills[j_bazheng.name]:getSkeleton()
+    local eff = nil
+    for _, spec in ipairs(sk.effect_spec_list) do
+      if spec[1] == fk.TargetSpecified then eff = spec[3] break end
+    end
+
+    -- ① 别人指定别人：不触发
+    local ok = eff:can_trigger({ room = room }, comp2, me, {
+      from = comp2, card = red, to = comp3,
+      use = { from = comp2, tos = { comp3 }, card = red },
+    })
+    lu.assertFalse(ok, "其他角色用红牌指定其他角色时不应触发霸争")
+
+    -- ② 别人指定我：项二触发
+    ok = eff:can_trigger({ room = room }, comp2, me, {
+      from = comp2, card = red, to = me,
+      use = { from = comp2, tos = { me }, card = red },
+    })
+    lu.assertIsTrue(ok, "其他角色用红牌指定你时应触发霸争（项二）")
+
+    -- ③ 我指定别人：项一触发
+    ok = eff:can_trigger({ room = room }, me, me, {
+      from = me, card = red, to = comp2,
+      use = { from = me, tos = { comp2 }, card = red },
+    })
+    lu.assertIsTrue(ok, "你用红牌指定其他角色时应触发霸争（项一）")
+  end)
+end)
+
 return j_bazheng

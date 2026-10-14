@@ -10,10 +10,12 @@ Fk:loadTranslationTable{
 j_dizhi:addEffect(fk.Damaged, {
   anim_type = "offensive",
   can_trigger = function(self, event, target, player, data)
-    local room = event.room
+    local room = player.room
     if not room then return false end
     if not player:hasSkill(j_dizhi.name) then return false end
     if not target:isAlive() then return false end
+    -- 【指仓相赠】不能对自己使用，受伤角色为技能持有者本人时不触发
+    if target.id == player.id then return false end
 
     local round_count = room:getBanner("RoundCount") or 0
     local round_tag = "j_dizhi_round_" .. round_count
@@ -26,7 +28,7 @@ j_dizhi:addEffect(fk.Damaged, {
     return player.room:askToSkillInvoke(player, { skill_name = j_dizhi.name })
   end,
   on_use = function(self, event, target, player, data)
-    local room = event.room
+    local room = player.room
     if not target:isAlive() then return end
     local round_tag = "j_dizhi_round_" .. (room:getBanner("RoundCount") or 0)
     local used_tag = round_tag .. "_" .. target.id

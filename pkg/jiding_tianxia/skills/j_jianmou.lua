@@ -138,4 +138,96 @@ j_jianmou:addEffect(fk.PreCardRespond, {
   end,
 })
 
+-- 测试：摸牌阶段外获得手牌 → 增加“间谋”标记
+j_jianmou:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jianmou.name)
+    c1 = room:printCard("slash", Card.Spade, 5)
+  end)
+  FkTest.runInRoom(function()
+    room.current = comp2 -- 回合外
+    room:obtainCard(me, { c1 }, false, fk.ReasonPrey, comp2, "test")
+    lu.assertEquals(c1:getMark("@@j_jianmou-inhand"), 1, "回合外获得手牌应标记间谋")
+  end)
+end)
+
+-- 测试：摸牌阶段内的摸牌不标记
+j_jianmou:addTest(function(room, me)
+  local c1
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jianmou.name)
+    c1 = room:printCard("slash", Card.Spade, 5)
+  end)
+  FkTest.runInRoom(function()
+    room.current = me
+    me.phase = Player.Draw
+    room:obtainCard(me, { c1 }, false, fk.ReasonDraw, me, "test")
+    lu.assertEquals(c1:getMark("@@j_jianmou-inhand"), 0, "摸牌阶段摸牌不应标记")
+  end)
+end)
+
+-- 测试：成为目标时展示同花色“间谋”牌并摸一张
+j_jianmou:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jianmou.name)
+    c1 = room:printCard("slash", Card.Spade, 5)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    room:setCardMark(c1, "@@j_jianmou-inhand", 1)
+  end)
+  FkTest.runInRoom(function()
+    local aim = AimData:new{ from = comp2, card = Fk:cloneCard("slash", Card.Spade, 5), tos = { me }, to = me }
+    room.logic:trigger(fk.TargetConfirmed, me, aim)
+    lu.assertEquals(#me:getCardIds("h"), 2, "展示间谋牌后应摸一张")
+  end)
+end)
+
+-- 测试：间谋牌不能直接使用（被拦截）；间智转化放行
+j_jianmou:addTest(function(room, me)
+  local c1
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jianmou.name)
+    c1 = room:printCard("slash", Card.Spade, 5)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    room:setCardMark(c1, "@@j_jianmou-inhand", 1)
+  end)
+  FkTest.runInRoom(function()
+    local card = c1
+    local use = UseCardData:new{ from = me, card = card, tos = {} }
+    local ret = room.logic:trigger(fk.PreCardUse, me, use)
+    lu.assertTrue(ret, "间谋牌直接使用应被拦截")
+
+    local card2 = Fk:cloneCard("slash", Card.Spade, 5)
+    card2.skillName = "j_jianzhi"
+    card2:addSubcard(c1.id)
+    local use2 = UseCardData:new{ from = me, card = card2, tos = {} }
+    local ret2 = room.logic:trigger(fk.PreCardUse, me, use2)
+    lu.assertFalse(ret2, "间智转化使用应放行")
+  end)
+end)
+
+-- 测试：间谋牌对其他角色可见（明置），普通牌对其他角色保持暗置
+j_jianmou:addTest(function(room, me)
+  local comp3 = room.players[3]
+  local c1, c2
+  FkTest.runInRoom(function()
+    c1 = room:printCard("slash", Card.Spade, 5)
+    c2 = room:printCard("peach", Card.Heart, 6)
+    -- 先获得普通牌（此时尚未拥有间谋，不会被标记）
+    room:obtainCard(me, { c2 }, false, fk.ReasonPrey, me, "test")
+    room:handleAddLoseSkills(me, j_jianmou.name)
+    -- 拥有间谋后再获得，触发摸牌阶段外获得 → 自动标记
+    room:obtainCard(me, { c1 }, false, fk.ReasonPrey, me, "test")
+  end)
+  FkTest.runInRoom(function()
+    lu.assertTrue(me:cardVisible(c1.id), "间谋牌应明置可见")
+    lu.assertTrue(comp3:cardVisible(c1.id), "间谋牌应对其他角色可见（明置=对其他角色可见）")
+    lu.assertTrue(me:cardVisible(c2.id), "普通牌对持有者应可见")
+    lu.assertFalse(comp3:cardVisible(c2.id), "普通牌对其他角色应暗置")
+  end)
+end)
+
 return j_jianmou

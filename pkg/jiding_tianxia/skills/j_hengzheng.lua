@@ -150,4 +150,82 @@ j_hengzheng:addAI(Fk.Ltk.AI.newInvokeStrategy {
   think = Util.TrueFunc,
 })
 
+-- 测试：阳形态可将一张基本牌当无中生有/过河拆桥使用
+j_hengzheng:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_hengzheng.name)
+    local c1 = room:printCard("slash", Card.Spade, 3)
+    local c2 = room:printCard("dismantlement", Card.Heart, 4)
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+    local skel = Fk.skills[j_hengzheng.name]:getSkeleton()
+    local eff = skel.effects[1]
+
+    -- 初始为阳形态：基本牌可转锦囊
+    lu.assertEquals(me:getSwitchSkillState(j_hengzheng.name), fk.SwitchYang, "初始应为阳形态")
+    eff.interaction.data = "ex_nihilo"
+    local card1 = eff:viewAs(me, { c1.id })
+    lu.assertNotNil(card1, "阳形态基本牌应能转化为无中生有")
+    lu.assertEquals(card1.name, "ex_nihilo")
+    eff.interaction.data = "dismantlement"
+    local card2 = eff:viewAs(me, { c2.id })
+    lu.assertNil(card2, "非基本牌不能转化")
+  end)
+end)
+
+-- 测试：阴形态使用非转化牌时，弃同色牌，使用者选"此牌无效"则牌无效且我摸一张
+j_hengzheng:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, c2
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_hengzheng.name)
+    -- 翻到阴形态
+    room:setPlayerMark(me, MarkEnum.SwithSkillPreName .. j_hengzheng.name, 1)
+    c1 = room:printCard("slash", Card.Spade, 5)
+    c2 = room:printCard("peach", Card.Heart, 6)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test") -- 黑
+    room:obtainCard(comp2, { c2 }, true, fk.ReasonDraw, comp2, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    lu.assertEquals(me:getSwitchSkillState(j_hengzheng.name), fk.SwitchYin, "应为阴形态")
+    -- comp2 使用一张黑色实体杀 → 我弃同色黑牌 → comp2 选"此牌无效"
+    local blackSlash = Fk:getCardById(comp2:getCardIds("h")[1]) -- 桃（红）不匹配，改用手动构造
+    -- 直接构造一个黑色实体杀的使用
+    local realSlash = room:printCard("slash", Card.Spade, 7)
+    room:obtainCard(comp2, { realSlash }, true, fk.ReasonDraw, comp2, "test")
+    FkTest.setNextReplies(me, { "1", FkTest.ReplyChooseCards({ c1.id }) })
+    FkTest.setNextReplies(comp2, { "j_hengzheng:nullify" })
+    local use = UseCardData:new{ from = comp2, card = Fk:getCardById(realSlash.id), tos = {} }
+    room.logic:trigger(fk.CardUsing, comp2, use)
+    lu.assertTrue(use.nullified, "此牌应被无效")
+    lu.assertEquals(#me:getCardIds("h"), 1, "我应摸一张牌（弃1摸1，手牌数不变为1）")
+    lu.assertEquals(me:getSwitchSkillState(j_hengzheng.name), fk.SwitchYang, "阴发动后应翻回阳")
+  end)
+end)
+
+-- 测试：使用者选"视为杀"则我对其使用一张杀
+j_hengzheng:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, c2
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_hengzheng.name)
+    room:setPlayerMark(me, MarkEnum.SwithSkillPreName .. j_hengzheng.name, 1)
+    c1 = room:printCard("slash", Card.Spade, 5)
+    c2 = room:printCard("peach", Card.Heart, 6)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    room:obtainCard(comp2, { c2 }, true, fk.ReasonDraw, comp2, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    local realSlash = room:printCard("slash", Card.Spade, 7)
+    room:obtainCard(comp2, { realSlash }, true, fk.ReasonDraw, comp2, "test")
+    FkTest.setNextReplies(me, { "1", FkTest.ReplyChooseCards({ c1.id }) })
+    FkTest.setNextReplies(comp2, { "j_hengzheng:slash", "" }) -- 选视为杀；comp2 无闪（桃）→ 中杀
+    local use = UseCardData:new{ from = comp2, card = Fk:getCardById(realSlash.id), tos = {} }
+    room.logic:trigger(fk.CardUsing, comp2, use)
+    lu.assertFalse(use.nullified, "选杀则牌不无效")
+    lu.assertEquals(comp2.hp, 3, "comp2 应受我的一张杀伤害")
+  end)
+end)
+
 return j_hengzheng

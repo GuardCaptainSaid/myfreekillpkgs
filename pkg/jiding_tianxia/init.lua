@@ -4,19 +4,8 @@ extension.extensionName = "AAA new sanguo"
 
 extension:loadSkillSkelsByPath("./packages/AAA new sanguo/pkg/jiding_tianxia/skills")
 
-local j_zicangxiangzeng = fk.CreateCard {
-  name = "j_zicangxiangzeng",
-  type = Card.TypeTrick,
-  sub_type = Card.SubtypeDelayedTrick,
-  skill = "j_zicangxiangzeng_skill",
-}
-extension:loadCardSkels { j_zicangxiangzeng }
-
 Fk:loadTranslationTable{
   ["jiding_tianxia"] = "计定天下",
-
-  ["j_zicangxiangzeng"] = "指仓相赠",
-  [":j_zicangxiangzeng"] = "出牌阶段，对一名其他角色使用，将其置于其判定区。判定阶段，若判定结果与此牌花色相同或点数奇偶相同，将此牌置于其武将牌上，称为“囷”，然后重复此流程；否则你摸两张牌。“囷”可以视为手牌使用或打出，使用“囷”无次数限制。",
 }
 
 General:new(extension, "jiwangyi", "wei", 4, 4, General.Female):addSkills { "j_zhenlie", "j_miji" }

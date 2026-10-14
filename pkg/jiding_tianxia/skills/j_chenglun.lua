@@ -157,4 +157,35 @@ j_chenglun:addEffect(fk.EventPhaseStart, {
   end,
 })
 
+-- 测试：成论主动技弃置目标一张牌并记录类型
+j_chenglun:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_chenglun.name)
+  end)
+
+  FkTest.runInRoom(function()
+    -- 目标过滤：其他角色可选、自己不可选
+    local sk = Fk.skills[j_chenglun.name]
+    lu.assertTrue(sk:targetFilter(me, comp2, {}, {}, nil, nil), "其他角色应可作为成论目标")
+    lu.assertFalse(sk:targetFilter(me, me, {}, {}, nil, nil), "成论不能以自己为目标")
+
+    local card1 = room:printCard("slash")
+    room:obtainCard(me, {card1}, true, fk.ReasonDraw, me, "test")
+    local trick_id = nil
+    for _, cid in ipairs(room.draw_pile) do
+      local c = Fk:getCardById(cid)
+      if c.type == Card.TypeTrick then trick_id = cid break end
+    end
+    room:obtainCard(comp2, {trick_id}, true, fk.ReasonDraw, comp2, "test")
+
+    FkTest.setNextReplies(me, { trick_id })
+    room:useSkill(me, sk, function()
+      sk:onUse(room, { from = me, tos = { comp2 }, cards = { card1.id } })
+    end, {})
+    lu.assertEquals(comp2:getMark("j_chenglun_type"), Card.TypeTrick, "应记录被弃置牌的锦囊类型")
+    lu.assertEquals(comp2:getMark("j_chenglun_caster"), me.id, "应记录施术者")
+  end)
+end)
+
 return j_chenglun
