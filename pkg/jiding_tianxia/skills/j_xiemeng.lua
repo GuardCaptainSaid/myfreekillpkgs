@@ -4,7 +4,7 @@ local j_xiemeng = fk.CreateSkill {
 
 Fk:loadTranslationTable{
   ["j_xiemeng"] = "协盟",
-  [":j_xiemeng"] = "当你的上家或下家成为一张牌的唯一目标时，你可以令你的下家或上家也成为此牌的目标。",
+  [":j_xiemeng"] = "当你的上家或下家成为一张非装备牌的唯一目标时，你可以令你的下家或上家也成为此牌的目标。",
 }
 
 j_xiemeng:addEffect(fk.CardUsing, {
@@ -12,6 +12,8 @@ j_xiemeng:addEffect(fk.CardUsing, {
   can_trigger = function(self, event, target, player, data)
     if not player:hasSkill(j_xiemeng.name) then return false end
     if not data.card then return false end
+    -- 装备牌不触发协盟
+    if data.card.type == Card.TypeEquip then return false end
 
     local targets = data.tos or {}
     if #targets ~= 1 then return false end

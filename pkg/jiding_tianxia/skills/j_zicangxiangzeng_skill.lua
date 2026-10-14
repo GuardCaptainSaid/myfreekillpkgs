@@ -73,4 +73,41 @@ j_zicangxiangzeng_skill:addEffect(fk.TargetConfirmed, {
   end,
 })
 
+-- 测试：使用【指仓相赠】记录使用者
+j_zicangxiangzeng_skill:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    local c1 = room:printCard("j_zicangxiangzeng", Card.Spade, 5)
+    local card = Fk:getCardById(c1)
+    local aim = AimData:new{ from = me, card = card, tos = { comp2 }, to = comp2 }
+    room.logic:trigger(fk.TargetConfirmed, comp2, aim)
+    lu.assertEquals(card:getMark("j_zicang_source"), me.id, "使用时应记录使用者")
+  end)
+end)
+
+-- 测试：判定阶段结算会发起判定（结果处理由“囷”负责，此处验证标记与判定发起不报错）
+j_zicangxiangzeng_skill:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    local c1 = room:printCard("j_zicangxiangzeng", Card.Spade, 5)
+    room:moveCards{
+      ids = { c1 },
+      to = comp2,
+      toArea = Card.PlayerJudge,
+      moveReason = fk.ReasonPut,
+    }
+    -- 判定牌：任意（发牌堆）
+    local jc = room:printCard("slash", Card.Spade, 9)
+    table.insert(room.draw_pile, 1, jc.id)
+  end)
+  FkTest.runInRoom(function()
+    -- 模拟判定阶段：移入处理区并结算
+    local card = Fk:getCardById(room:getCardIds(Player.Judge)[1])
+    room:moveCardTo(card, Card.Processing, nil, fk.ReasonPut, "phase_judge")
+    local eff = CardEffectData:new{ card = card, to = comp2, tos = { comp2 } }
+    room:doCardEffect(eff)
+    lu.assertEquals(comp2:getMark("j_zicang_in_judge") == 0, false, "判定后应保留判定区标记或已由囷处理")
+  end)
+end)
+
 return j_zicangxiangzeng_skill
