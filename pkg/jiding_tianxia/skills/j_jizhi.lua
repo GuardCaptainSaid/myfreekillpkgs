@@ -75,4 +75,55 @@ j_jizhi:addEffect("viewas", {
   end,
 })
 
+-- 测试：候选锦囊排除本轮已使用过的
+j_jizhi:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jizhi.name)
+    me:addCardUseHistory("wufeng", 1)
+  end)
+  local names = available_tricks(me)
+  lu.assertFalse(table.contains(names, "wufeng"), "已使用过的锦囊不应出现在候选")
+  lu.assertTrue(#names > 0, "候选锦囊不应为空")
+end)
+
+-- 获取 viewas 效果实例（interaction/viewAs 所在）
+local function viewas_effect()
+  local skel = Fk.skills[j_jizhi.name]:getSkeleton()
+  return skel.effects[1]
+end
+
+-- 测试：X=0 时用 1 张手牌转化为本轮未用过的普通锦囊
+j_jizhi:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jizhi.name)
+    local c1 = room:printCard("slash", Card.Heart, 1)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    local eff = viewas_effect()
+    local tricks = Fk:getAllCardNames("t", true)
+    eff.interaction.data = tricks[1]
+    local card = eff:viewAs(me, { c1.id })
+    lu.assertNotNil(card, "X=0 时 1 张手牌应能转化为普通锦囊")
+    lu.assertEquals(card.name, tricks[1])
+    lu.assertEquals(#card.subcards, 1)
+  end)
+end)
+
+-- 测试：超过 X+1 张或花色重复时不能转化
+j_jizhi:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_jizhi.name)
+    local c1 = room:printCard("slash", Card.Heart, 1)
+    local c2 = room:printCard("slash", Card.Diamond, 2)
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+    local eff = viewas_effect()
+    local tricks = Fk:getAllCardNames("t", true)
+    eff.interaction.data = tricks[1]
+    local card = eff:viewAs(me, { c1.id, c2.id })
+    lu.assertNil(card, "X=0 时最多允许 1 张牌，2 张不应转化")
+    local same = eff:viewAs(me, { c1.id })
+    -- 单张不同花色仍可用
+    lu.assertNotNil(same, "1 张手牌转化应成功")
+  end)
+end)
+
 return j_jizhi

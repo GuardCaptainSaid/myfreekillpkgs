@@ -138,4 +138,45 @@ j_miji:addEffect("maxcards", {
   end,
 })
 
+-- 测试：红色判定获得带标记的判定牌
+j_miji:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_miji.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local peach = room:printCard("peach")
+    peach.suit = Card.Heart
+    peach.number = 1
+    table.insert(room.draw_pile, 1, peach.id)
+    FkTest.setNextReplies(me, { "1" })
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+  end)
+  local has_red = false
+  for _, cid in ipairs(me:getCardIds("h")) do
+    if Fk:getCardById(cid):getMark("@j_miji_red") == 1 then has_red = true end
+  end
+  lu.assertTrue(has_red, "红色判定应获得带秘计标记的判定牌")
+end)
+
+-- 测试：黑色判定将 X 张牌交给一名角色
+j_miji:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_miji.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local spade = room:printCard("slash")
+    spade.suit = Card.Spade
+    spade.color = Card.Black
+    spade.number = 5
+    table.insert(room.draw_pile, 1, spade.id)
+    FkTest.setNextReplies(me, { "1", { cards = {}, choice = "OK" }, { targets = { comp2.id }, card = { name = "slash", subcards = {} } } })
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+  end)
+  lu.assertTrue(#comp2:getCardIds("h") > 0, "黑色判定应把牌堆顶的牌交给目标角色")
+end)
+
 return j_miji

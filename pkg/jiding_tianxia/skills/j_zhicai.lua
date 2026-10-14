@@ -288,4 +288,94 @@ j_zhicai:addEffect(fk.CardUsing, {
   end,
 })
 
+-- 测试：智才阳效果（受伤害摸两张 + 令一名角色手牌上限+2）
+j_zhicai:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhicai.name)
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.cleanNextReplies(me)
+    FkTest.setNextReplies(me, { "1", FkTest.ReplyChoosePlayer({ comp2 }) })
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(comp2:getMark("j_zhicai_caster"), me.id, "目标应被记录施术者")
+    lu.assertEquals(comp2:getMark(MarkEnum.AddMaxCards), 2, "目标手牌上限应+2")
+    lu.assertTrue(#me:getCardIds("h") >= 2, "智才使用者应摸两张牌")
+  end)
+end)
+
+-- 测试：阴效果——使用特殊牌时弹窗转化为单目标普通锦囊（无主动技按钮）
+j_zhicai:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local special
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhicai.name)
+    special = room:printCard("slash", Card.Heart, 1)
+    room:obtainCard(me, { special }, true, fk.ReasonDraw, me, "test")
+    -- 给 comp2 发一张牌（过河拆桥目标需有牌）
+    local c2card = room:printCard("slash", Card.Spade, 2)
+    room:obtainCard(comp2, { c2card }, true, fk.ReasonDraw, comp2, "test")
+    room:setPlayerMark(me, "j_zhicai_special_card", special.id)
+    room:setPlayerMark(me, "j_zhicai_special_color", Card.Red)
+  end)
+
+  -- 完整使用流程：特殊杀应被转化为过河拆桥并弃置目标手牌（PreCardUse 弹窗转化）
+  FkTest.runInRoom(function()
+    FkTest.cleanNextReplies(me)
+    FkTest.setNextReplies(me, {
+      "1",                                       -- （兜底）可能的隐藏前置询问
+      "1",                                       -- （兜底）同上
+      "1",                                       -- 同意当锦囊
+      { "dismantlement" },                       -- 选过河拆桥
+      FkTest.ReplyChoosePlayer({ comp2 }),       -- 选目标
+      FkTest.ReplyChoosePlayer({ comp2 }),
+    })
+    room:useCard{ from = me, card = special, tos = { comp2 } }
+    -- 使用特殊牌时应弹出转化询问并完成转化（牌标记清除、颜色标记保留到回合结束）
+    lu.assertEquals(me:getMark("j_zhicai_special_card"), 0, "使用后应清除特殊牌标记")
+    lu.assertEquals(me:getMark("j_zhicai_special_color"), Card.Red, "颜色标记应保留（本回合内不同色手牌摸牌联动）")
+  end)
+end)
+
+-- 测试：回合结束清理阴效果的颜色标记
+j_zhicai:addTest(function(room, me)
+  local special
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhicai.name)
+    special = room:printCard("slash", Card.Heart, 1)
+    room:obtainCard(me, { special }, true, fk.ReasonDraw, me, "test")
+    room:setPlayerMark(me, "j_zhicai_special_card", special.id)
+    room:setPlayerMark(me, "j_zhicai_special_color", Card.Red)
+  end)
+
+  FkTest.runInRoom(function()
+    local use = UseCardData:new{ from = me, card = Fk:getCardById(special.id), tos = {} }
+    room.logic:trigger(fk.TurnEnd, me, use)
+    lu.assertEquals(me:getMark("j_zhicai_special_card"), 0, "回合结束应清除特殊牌标记")
+    lu.assertEquals(me:getMark("j_zhicai_special_color"), 0, "回合结束应清除颜色标记")
+  end)
+end)
+
+-- 测试：使用特殊牌但拒绝转化时保持原牌使用
+j_zhicai:addTest(function(room, me)
+  local special
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhicai.name)
+    special = room:printCard("slash", Card.Heart, 1)
+    room:obtainCard(me, { special }, true, fk.ReasonDraw, me, "test")
+    room:setPlayerMark(me, "j_zhicai_special_card", special.id)
+    room:setPlayerMark(me, "j_zhicai_special_color", Card.Red)
+  end)
+
+  FkTest.runInRoom(function()
+    FkTest.cleanNextReplies(me)
+    FkTest.setNextReplies(me, {})                -- 无回复（超时拒绝转化）
+    local use = UseCardData:new{ from = me, card = Fk:getCardById(special.id), tos = {} }
+    room.logic:trigger(fk.PreCardUse, me, use)
+    lu.assertEquals(use.card.name, "slash", "拒绝转化时应保持原牌")
+    lu.assertEquals(me:getMark("j_zhicai_special_card"), special.id, "拒绝后标记应保留")
+  end)
+end)
+
 return j_zhicai

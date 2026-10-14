@@ -98,4 +98,63 @@ j_zhixi:addEffect(fk.RoundStart, {
   end,
 })
 
+-- 测试：你受到伤害后弃X张摸3（本轮仅一种花色入弃牌堆 → X 至少为2）
+j_zhixi:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhixi.name)
+  end)
+
+  FkTest.runInRoom(function()
+    room.current = comp2 -- 置为“回合外”，被动技才会生效
+    local c1 = room:printCard("slash")
+    local c2 = room:printCard("peach")
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+    room:setPlayerMark(me, "j_zhixi_suits", { Card.Spade })
+
+    FkTest.setNextReplies(me, { "1", { card = { name = "slash", subcards = { c1.id, c2.id } }, targets = {} } })
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(#me:getCardIds("h"), 3, "X至少为2：2张弃2后摸3应余3张")
+  end)
+end)
+
+-- 测试：出牌阶段主动发动质玺（点击技能直接选牌，无需询问）
+j_zhixi:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhixi.name)
+  end)
+
+  FkTest.runInRoom(function()
+    local c1 = room:printCard("slash")
+    local c2 = room:printCard("peach")
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+    room:setPlayerMark(me, "j_zhixi_suits", { Card.Spade })
+
+    FkTest.setNextReplies(me, { { card = { name = "slash", subcards = { c1.id, c2.id } }, targets = {} } })
+    local sk = Fk.skills[j_zhixi.name]
+    room:useSkill(me, sk, function()
+      sk:onUse(room, { from = me, tos = {}, cards = {} })
+    end, {})
+    lu.assertEquals(#me:getCardIds("h"), 3, "主动发动：2张弃2后摸3应余3张")
+  end)
+end)
+
+-- 测试：自己的回合内受到伤害不应触发被动（回合内由主动技负责，避免违规弹窗）
+j_zhixi:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_zhixi.name)
+  end)
+
+  FkTest.runInRoom(function()
+    room.current = me -- 置为“回合内”
+    local c1 = room:printCard("slash")
+    local c2 = room:printCard("peach")
+    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(#me:getCardIds("h"), 2, "回合内受伤不应触发质玺")
+  end)
+end)
+
 return j_zhixi
