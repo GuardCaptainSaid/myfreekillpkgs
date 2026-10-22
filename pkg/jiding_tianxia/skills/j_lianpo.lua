@@ -76,7 +76,7 @@ j_lianpo:addEffect(fk.BeforeGameOverJudge, {
     local room = player.room
     -- 本次死亡被炼魄救活：标记由下方 GameOverJudge 监听消费，
     -- 阻止 game_rule 的 bury() 弃掉刚摸的牌/清除标记/令技能失效
-    room:setPlayerMark(target, "@j_lianpo_revive", 1)
+    room:setPlayerMark(target, "j_lianpo_revive_flag", 1)
     applyLianpo(room, player, target)
   end,
 })
@@ -85,7 +85,7 @@ j_lianpo:addEffect(fk.BeforeGameOverJudge, {
 -- game_rule 的 GameOverJudge（priority 0）正常判胜后（复活角色 alive，判胜不会发生），
 -- 这里（priority -1，自动触发不弹窗）重新设置 SkipGameRule，供 game_rule 的
 -- BuryVictim 消费以跳过 bury()（否则会弃掉刚摸的牌/清除标记/令技能失效）。
--- @j_lianpo_revive 为一次性标记：设置后立即清除，正常死亡（未被炼魄救活）不受影响。
+-- j_lianpo_revive_flag 为一次性标记（不可见标记）：设置后立即清除，正常死亡（未被炼魄救活）不受影响。
 j_lianpo:addEffect(fk.GameOverJudge, {
   global = true,
   priority = -1,
@@ -94,11 +94,11 @@ j_lianpo:addEffect(fk.GameOverJudge, {
     return true
   end,
   can_trigger = function(self, event, target, player, data)
-    return target ~= nil and target:getMark("@j_lianpo_revive") > 0
+    return target ~= nil and target:getMark("j_lianpo_revive_flag") > 0
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room
-    room:setPlayerMark(target, "@j_lianpo_revive", 0)
+    room:setPlayerMark(target, "j_lianpo_revive_flag", 0)
     room:setTag("SkipGameRule", true)
   end,
 })
