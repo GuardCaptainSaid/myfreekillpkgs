@@ -14,6 +14,7 @@ Fk:loadTranslationTable{
   ["#j_quanjiang-give"] = "劝降：交给其一张手牌",
   ["j_quanjiang_opt1"] = "横置武将牌并交给其一张手牌",
   ["j_quanjiang_opt2"] = "失去一点体力并对其使用一张【杀】",
+  ["@@j_quanjiang_targeted"] = "劝降",
 }
 
 j_quanjiang:addEffect("active", {

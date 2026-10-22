@@ -146,6 +146,17 @@ Fk:loadTranslationTable{
   ["~ji_manchong"] = "峻法之下……无人可免……",
 }
 
+General:new(extension, "ji_chenqun", "wei", 3, 4):addSkills { "j_dingpin", "j_caizhuang", "j_dianlv" }
+Fk:loadTranslationTable{
+  ["ji_chenqun"] = "计陈群",
+  ["#ji_chenqun"] = "品第铨才",
+  ["designer:ji_chenqun"] = "袁焉",
+  ["illustrator:ji_chenqun"] = "袁焉",
+  ["cv:ji_chenqun"] = "佚名",
+
+  ["~ji_chenqun"] = "九品官人……终成门阀之阶……",
+}
+
 General:new(extension, "ji_chengyu", "wei", 3, 4):addSkills { "j_hanji", "j_ejin", "j_gulei" }
 Fk:loadTranslationTable{
   ["ji_chengyu"] = "计程昱",

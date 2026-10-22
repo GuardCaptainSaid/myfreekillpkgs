@@ -53,18 +53,24 @@ j_guwei:addEffect(fk.EventPhaseEnd, {
     local room = player.room
     local types = player:getTableMark("j_guwei_types-turn")
     local names = {}
+    -- 只收集引擎中已注册、可被 cloneCard 的牌名（排除派生卡如 hx__扑克牌，其 trueName 未注册）
+    local function collect(card)
+      if Fk.all_card_types[card.trueName] then
+        table.insertIfNeed(names, card.trueName)
+      end
+    end
     if #types == 1 then
       -- 一种类别 → 视为使用一张基本牌
-      for _, card in ipairs(Fk.cards) do
+      for _, card in pairs(Fk.all_card_types) do
         if card.type == Card.TypeBasic then
-          table.insertIfNeed(names, card.trueName)
+          collect(card)
         end
       end
     else
       -- 至少三种类别 → 视为使用一张普通锦囊牌
-      for _, card in ipairs(Fk.cards) do
+      for _, card in pairs(Fk.all_card_types) do
         if card.type == Card.TypeTrick and card.sub_type ~= Card.SubtypeDelayedTrick then
-          table.insertIfNeed(names, card.trueName)
+          collect(card)
         end
       end
     end
