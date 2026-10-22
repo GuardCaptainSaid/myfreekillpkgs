@@ -157,6 +157,17 @@ Fk:loadTranslationTable{
   ["~ji_chenqun"] = "九品官人……终成门阀之阶……",
 }
 
+General:new(extension, "ji_huanfan", "wei", 3, 4):addSkills { "j_xiance", "j_jiaochu" }
+Fk:loadTranslationTable{
+  ["ji_huanfan"] = "计桓范",
+  ["#ji_huanfan"] = "智尽难回",
+  ["designer:ji_huanfan"] = "袁焉",
+  ["illustrator:ji_huanfan"] = "袁焉",
+  ["cv:ji_huanfan"] = "佚名",
+
+  ["~ji_huanfan"] = "竖子不足与谋……智士之悲，莫过于此……",
+}
+
 General:new(extension, "ji_chengyu", "wei", 3, 4):addSkills { "j_hanji", "j_ejin", "j_gulei" }
 Fk:loadTranslationTable{
   ["ji_chengyu"] = "计程昱",
