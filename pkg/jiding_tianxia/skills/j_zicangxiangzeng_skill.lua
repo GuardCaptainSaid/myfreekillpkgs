@@ -30,6 +30,24 @@ j_zicangxiangzeng_skill:addEffect("cardskill", {
     end
     room:setPlayerMark(to, "j_zicang_in_judge", real_id)
 
+    -- 场上必须存在拥有【囷】的存活角色来收取判定牌；否则无囷处理判定，
+    -- 判定结果按失败结算（判定者摸两张、指仓相赠弃置），避免无终止依据的连续空转
+    local has_qun_handler = false
+    for _, p in ipairs(room.players) do
+      if p:isAlive() and p:hasSkill("j_qun") then
+        has_qun_handler = true
+        break
+      end
+    end
+    if not has_qun_handler then
+      to:drawCards(2, "j_zicangxiangzeng_skill")
+      local fail_move = { ids = { real_id }, toArea = Card.DiscardPile, moveReason = fk.ReasonPut, skillName = "j_zicangxiangzeng_skill" }
+      if card:isVirtual() then fail_move.virtualEquip = card end
+      room:moveCards(fail_move)
+      room:setPlayerMark(to, "j_zicang_in_judge", 0)
+      return
+    end
+
     -- 洛神式连续判定：判定牌与此牌花色相同或点数奇偶相同 → 由“囷”收取判定牌并继续判定；
     -- 失败 → “囷”清除判定区记录（指仓相赠进弃牌堆）后循环结束
     local guard = 0
@@ -147,6 +165,74 @@ j_zicangxiangzeng_skill:addTest(function(room, me)
     lu.assertTrue(sk ~= nil, "应能取得卡牌技能")
     lu.assertTrue(Util.CardTargetFilter(sk, me, me, {}, {}, card, {}), "可指定自己为目标")
     lu.assertTrue(Util.CardTargetFilter(sk, me, comp2, {}, {}, card, {}), "可指定其他角色为目标")
+  end)
+end)
+
+-- 测试：判定者没有任何囷（场上无计鲁肃/无囷技能）时，判定直接按失败结算，
+-- 不得出现无终止依据的连续空转（“一直判定”）
+j_zicangxiangzeng_skill:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local zicang
+  FkTest.runInRoom(function()
+    -- me 默认没有 j_qun（测试房为郭嘉），模拟场上无囷处理者
+    zicang = room:printCard("j_zicangxiangzeng")
+    zicang.suit = Card.Heart
+    zicang.number = 5
+    room:setCardMark(zicang, "j_zicang_source", me.id)
+    room:moveCardTo(zicang.id, Card.PlayerJudge, comp2, fk.ReasonPut, "test")
+    room:setPlayerMark(comp2, "j_zicang_in_judge", zicang.id)
+    room:moveCardTo(zicang.id, Card.Processing, nil, fk.ReasonPut, "phase_judge")
+
+    -- 判定牌1：黑桃4（即使有囷也不匹配）
+    local j1 = room:printCard("slash", Card.Spade, 4)
+    room:moveCards{ ids = { j1.id }, toArea = Card.DrawPile, moveReason = fk.ReasonJustMove, drawPilePosition = 1 }
+  end)
+
+  FkTest.runInRoom(function()
+    local hand_before = #comp2:getCardIds("h")
+    local eff = CardEffectData:new{ card = Fk:getCardById(zicang.id), to = comp2, tos = { comp2 } }
+    room:doCardEffect(eff)
+    lu.assertEquals(comp2:getMark("j_zicang_in_judge"), 0, "无囷时判定应结束并清标记")
+    lu.assertEquals(#comp2:getCardIds("h"), hand_before + 2, "无囷时判定者应摸两张牌（按失败结算）")
+    lu.assertEquals(room:getCardArea(zicang.id), Card.DiscardPile, "无囷时指仓相赠应进入弃牌堆")
+  end)
+end)
+
+-- 诊断：牌堆顶连续多张匹配 → 循环逐张入囷，直到不匹配停止（确认不会失控）
+j_zicangxiangzeng_skill:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local zicang
+  FkTest.runInRoom(function()
+    -- me 获得囷（测试房里 me 默认无技能，必须显式添加）
+    room:handleAddLoseSkills(me, "j_qun")
+    zicang = room:printCard("j_zicangxiangzeng")
+    zicang.suit = Card.Heart
+    zicang.number = 5 -- 奇数：奇数点判定牌全部匹配
+    room:setCardMark(zicang, "j_zicang_source", me.id)
+    room:moveCardTo(zicang.id, Card.PlayerJudge, comp2, fk.ReasonPut, "test")
+    room:setPlayerMark(comp2, "j_zicang_in_judge", zicang.id)
+    room:moveCardTo(zicang.id, Card.Processing, nil, fk.ReasonPut, "phase_judge")
+
+    -- 顶10张全奇数点（匹配），第11张偶数（不匹配，终止循环）
+    local odd_pts = { 3, 5, 7, 9, 11, 13, 3, 5, 7, 9 }
+    local ids = {}
+    for _, n in ipairs(odd_pts) do
+      local j = room:printCard("peach", Card.Heart, n)
+      table.insert(ids, j.id)
+    end
+    local tail = room:printCard("slash", Card.Spade, 4)
+    -- 置顶顺序：先插最后才被翻到的（tail 在最底），ids 倒序插入使 ids[1] 位于牌堆顶
+    room:moveCards{ ids = { tail.id }, toArea = Card.DrawPile, moveReason = fk.ReasonJustMove, drawPilePosition = 1 }
+    for i = #ids, 1, -1 do
+      room:moveCards{ ids = { ids[i] }, toArea = Card.DrawPile, moveReason = fk.ReasonJustMove, drawPilePosition = 1 }
+    end
+  end)
+
+  FkTest.runInRoom(function()
+    local eff = CardEffectData:new{ card = Fk:getCardById(zicang.id), to = comp2, tos = { comp2 } }
+    room:doCardEffect(eff)
+    lu.assertEquals(#comp2:getPile("j_qun"), 10, "连续匹配的判定牌应全部入囷（10张）")
+    lu.assertEquals(comp2:getMark("j_zicang_in_judge"), 0, "遇到不匹配后循环应终止")
   end)
 end)
 

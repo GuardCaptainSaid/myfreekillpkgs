@@ -6,6 +6,7 @@ Fk:loadTranslationTable{
   ["j_janmo"] = "缄默",
   [":j_janmo"] = "每回合限一次，当你获得其他角色的手牌后，你可以令其选择一项：1.令你摸一张牌；2.弃置一张牌；3.失去一个技能直到回合结束。若其手牌数不等于体力值，你令其执行随机另一项。",
 
+  ["#j_janmo-invoke"] = "缄默：是否令其选择一项？",
   ["#j_janmo-choice"] = "缄默：请执行一项",
   ["#j_janmo-discard"] = "缄默：弃置一张牌",
   ["#j_janmo-skill"] = "缄默：选择失去一个技能（直到回合结束）",
@@ -47,7 +48,7 @@ j_janmo:addEffect(fk.AfterCardsMove, {
     return false
   end,
   on_cost = function(self, event, target, player, data)
-    return true
+    return player.room:askToSkillInvoke(player, { skill_name = j_janmo.name, prompt = "#j_janmo-invoke" })
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room
@@ -62,14 +63,17 @@ j_janmo:addEffect(fk.AfterCardsMove, {
     end
     if not victim or victim.dead then return end
 
-    room:setPlayerMark(player, "j_janmo-turn", 1)
-
-    -- 可选项目：无技能可失去时去掉第三项
+    -- 先按可行性裁剪选项：无可失技能时去掉第三项，无牌可弃时去掉第二项
     local choices = table.simpleClone(J_OPTIONS)
     if #lose_candidates(victim) == 0 then
       table.removeOne(choices, "j_janmo_lose")
     end
+    if #victim:getCardIds("he") == 0 then
+      table.removeOne(choices, "j_janmo_discard")
+    end
     if #choices == 0 then return end
+
+    room:setPlayerMark(player, "j_janmo-turn", 1)
 
     local choice = room:askToChoice(victim, {
       choices = choices,
@@ -151,6 +155,8 @@ j_janmo:addTest(function(room, me)
   end)
 
   FkTest.runInRoom(function()
+    local origInvoke = room.askToSkillInvoke
+    room.askToSkillInvoke = function(self, who, params) return true end
     local orig = room.askToChoice
     room.askToChoice = function(self, who, params)
       lu.assertEquals(who, comp2, "应由被获得手牌的角色进行选择")
@@ -159,6 +165,7 @@ j_janmo:addTest(function(room, me)
     local before = #me:getCardIds("h")
     room:obtainCard(me, { c1 }, false, fk.ReasonPrey, comp2, "test")
     room.askToChoice = orig
+    room.askToSkillInvoke = origInvoke
     lu.assertEquals(#me:getCardIds("h"), before + 1 + 1, "获得手牌后应额外摸一张牌")
     lu.assertEquals(me:getMark("j_janmo-turn"), 1, "每回合限一次")
   end)
@@ -177,6 +184,8 @@ j_janmo:addTest(function(room, me)
 
   FkTest.runInRoom(function()
     local asked = false
+    local origInvoke = room.askToSkillInvoke
+    room.askToSkillInvoke = function(self, who, params) return true end
     local orig = room.askToChoice
     room.askToChoice = function(self, who, params)
       asked = true
@@ -184,6 +193,7 @@ j_janmo:addTest(function(room, me)
     end
     room:obtainCard(me, { c1 }, false, fk.ReasonPrey, comp2, "test")
     room.askToChoice = orig
+    room.askToSkillInvoke = origInvoke
     lu.assertTrue(asked, "应询问被获得手牌的角色")
   end)
 end)

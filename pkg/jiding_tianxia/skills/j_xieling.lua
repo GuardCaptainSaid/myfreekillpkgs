@@ -6,6 +6,7 @@ Fk:loadTranslationTable{
   ["j_xieling"] = "胁令",
   [":j_xieling"] = "当你受到伤害时，若场上存在武器牌，你可以将一张手牌当作【借刀杀人】使用，若此牌未造成伤害，你令伤害来源选择一项：1.令你回复1点体力；2.令你获得其一张牌。",
 
+  ["#j_xieling-invoke"] = "胁令：是否将一张手牌当作【借刀杀人】使用？",
   ["#j_xieling-card"] = "胁令：选择一张手牌当作【借刀杀人】使用",
   ["#j_xieling-weapon"] = "胁令：选择一名装备着武器牌的角色",
   ["#j_xieling-victim"] = "胁令：选择其攻击范围内的一名角色",
@@ -29,9 +30,10 @@ local function collateral_holders(room, me)
   end)
 end
 
-local function has_weapon_on_field(room, me)
+-- 场上任意角色装备着武器牌（含自己；借刀杀人的第一目标仍限定其他角色）
+local function has_weapon_on_field(room)
   return table.find(room.alive_players, function(p)
-    return p ~= me and p:getEquipment(Card.SubtypeWeapon)
+    return p:getEquipment(Card.SubtypeWeapon)
   end) ~= nil
 end
 
@@ -45,10 +47,10 @@ j_xieling:addEffect(fk.DamageInflicted, {
     -- 借刀杀人结算期间不再重复触发（避免递归）
     if player.room:getTag("j_xieling_pending") then return false end
     if #player:getCardIds("h") == 0 then return false end
-    return has_weapon_on_field(player.room, player)
+    return has_weapon_on_field(player.room)
   end,
   on_cost = function(self, event, target, player, data)
-    return true
+    return player.room:askToSkillInvoke(player, { skill_name = j_xieling.name, prompt = "#j_xieling-invoke" })
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room
@@ -136,8 +138,9 @@ j_xieling:addEffect(fk.DamageInflicted, {
     local pending = player.room:getTag("j_xieling_pending")
     if type(pending) ~= "table" then return false end
     if not (data.from and data.to and data.card) then return false end
+    -- 借刀触发的出杀可能是杀/火杀/雷杀，任一命中都应记入
     return data.from.id == pending.from_id and data.to.id == pending.to_id and
-      data.card.trueName == "slash"
+      (data.card.trueName == "slash" or data.card.trueName == "fire_slash" or data.card.trueName == "thunder_slash")
   end,
   on_cost = function(self, event, target, player, data)
     return true
@@ -161,18 +164,26 @@ j_xieling:addTest(function(room, me)
   end)
 
   FkTest.runInRoom(function()
-    local origCards, origPlayers, origUse = room.askToChooseCards, room.askToChoosePlayers, room.useCard
+    local origInvoke, origCards, origPlayers, origChoice, origUse =
+      room.askToSkillInvoke, room.askToChooseCards, room.askToChoosePlayers, room.askToChoice, room.useCard
+    room.askToSkillInvoke = function(self, who, params) return true end
     room.askToChooseCards = function(self, who, params) return { c1.id } end
     room.askToChoosePlayers = function(self, who, params)
       if params.prompt == "#j_xieling-weapon" then return { comp2 } end
       return { comp3 }
     end
+    room.askToChoice = function(self, who, params)
+      lu.assertEquals(who, comp2, "未造成伤害时应由伤害来源选择一项")
+      return "j_xieling_recover"
+    end
     local used
     room.useCard = function(self, params) used = params end
     local dmg = DamageData:new{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
     room.logic:trigger(fk.DamageInflicted, me, dmg)
+    room.askToSkillInvoke = origInvoke
     room.askToChooseCards = origCards
     room.askToChoosePlayers = origPlayers
+    room.askToChoice = origChoice
     room.useCard = origUse
 
     lu.assertNotNil(used, "应视为使用【借刀杀人】")
@@ -199,6 +210,46 @@ j_xieling:addTest(function(room, me)
     room.logic:trigger(fk.DamageInflicted, me, dmg)
     room.useCard = origUse
     lu.assertIsNil(used, "场上无武器牌时不应视为使用借刀杀人")
+  end)
+end)
+
+-- 测试：计司马师自己装备武器牌时也应触发（场上武器含自己）
+j_xieling:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, weapon
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_xieling.name)
+    c1 = room:printCard("peach", Card.Heart, 3)
+    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    weapon = room:printCard("blade", Card.Spade, 1)
+    room:moveCardTo(weapon.id, Card.PlayerEquip, me, fk.ReasonPut, "test")
+  end)
+
+  FkTest.runInRoom(function()
+    local origInvoke, origCards, origPlayers, origChoice, origUse =
+      room.askToSkillInvoke, room.askToChooseCards, room.askToChoosePlayers, room.askToChoice, room.useCard
+    local invoked = false
+    room.askToSkillInvoke = function(self, who, params)
+      invoked = true
+      return true
+    end
+    room.askToChooseCards = function(self, who, params) return { c1.id } end
+    room.askToChoosePlayers = function(self, who, params)
+      return { }
+    end
+    room.askToChoice = function(self, who, params) return "j_xieling_recover" end
+    local used
+    room.useCard = function(self, params) used = params end
+    local dmg = DamageData:new{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    room.logic:trigger(fk.DamageInflicted, me, dmg)
+    room.askToSkillInvoke = origInvoke
+    room.askToChooseCards = origCards
+    room.askToChoosePlayers = origPlayers
+    room.askToChoice = origChoice
+    room.useCard = origUse
+
+    lu.assertTrue(invoked, "自己装备武器牌时也应询问是否发动胁令")
+    lu.assertIsNil(used, "场上仅自己持武器时无其他持武器角色，借刀不应使用")
   end)
 end)
 

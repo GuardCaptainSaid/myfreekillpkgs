@@ -102,6 +102,50 @@ Fk:loadTranslationTable{
   ["~ji_simayi"] = "蛰伏已久……岂能死于……妇人之手……",
 }
 
+General:new(extension, "ji_dongzhao", "wei", 3, 4):addSkills { "j_dingji", "j_jiaoxie" }
+Fk:loadTranslationTable{
+  ["ji_dongzhao"] = "计董昭",
+  ["#ji_dongzhao"] = "建策立魏",
+  ["designer:ji_dongzhao"] = "袁焉",
+  ["illustrator:ji_dongzhao"] = "袁焉",
+  ["cv:ji_dongzhao"] = "佚名",
+
+  ["~ji_dongzhao"] = "定都之策……终成大魏基石……",
+}
+
+General:new(extension, "ji_liuye", "wei", 3, 4):addSkills { "j_zhushi", "j_polu", "j_qixie" }
+Fk:loadTranslationTable{
+  ["ji_liuye"] = "计刘晔",
+  ["#ji_liuye"] = "奇械定军",
+  ["designer:ji_liuye"] = "袁焉",
+  ["illustrator:ji_liuye"] = "袁焉",
+  ["cv:ji_liuye"] = "佚名",
+
+  ["~ji_liuye"] = "奇械既成……奈何天命……不在我魏……",
+}
+
+General:new(extension, "ji_jiangji", "wei", 3, 4):addSkills { "j_liaoxu", "j_quanjiang", "j_yijiu" }
+Fk:loadTranslationTable{
+  ["ji_jiangji"] = "计蒋济",
+  ["#ji_jiangji"] = "策论万机",
+  ["designer:ji_jiangji"] = "袁焉",
+  ["illustrator:ji_jiangji"] = "袁焉",
+  ["cv:ji_jiangji"] = "佚名",
+
+  ["~ji_jiangji"] = "尺牍之间……皆成杀伐之器……",
+}
+
+General:new(extension, "ji_manchong", "wei", 3, 3):addSkills { "j_guwei", "j_suofeng", "j_junxing" }
+Fk:loadTranslationTable{
+  ["ji_manchong"] = "计满宠",
+  ["#ji_manchong"] = "镇淮筹法",
+  ["designer:ji_manchong"] = "袁焉",
+  ["illustrator:ji_manchong"] = "袁焉",
+  ["cv:ji_manchong"] = "佚名",
+
+  ["~ji_manchong"] = "峻法之下……无人可免……",
+}
+
 General:new(extension, "ji_chengyu", "wei", 3, 4):addSkills { "j_hanji", "j_ejin", "j_gulei" }
 Fk:loadTranslationTable{
   ["ji_chengyu"] = "计程昱",
@@ -161,7 +205,7 @@ local ji_lusu = General:new(extension, "ji_lusu", "wu", 3, 4)
 ji_lusu:addSkills { "j_shezeng", "j_dizhi", "j_xiemeng" }
 ji_lusu:addRelatedSkills { "j_qun" }
 Fk:loadTranslationTable{
-  ["ji_lusu"] = "计鲁肃",
+  ["ji_lusu"] = "计鲁肃（有bug，别用）",
   ["#ji_lusu"] = "慷慨解囊",
   ["designer:ji_lusu"] = "袁焉",
   ["illustrator:ji_lusu"] = "袁焉",
