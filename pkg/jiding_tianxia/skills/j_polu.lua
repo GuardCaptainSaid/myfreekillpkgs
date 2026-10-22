@@ -80,19 +80,21 @@ local function recomputeGrants(room, player)
   room:setPlayerMark(player, "j_polu_granted", newSet)
 end
 
--- 更新攻击范围：重算武器技能；仅在攻击范围“增加”时询问视为使用
--- 破橹②只认“非装备来源”的攻击范围（排除自身装备区：基础1+技能加成）：
--- 自己装备武器或他人装备武器都不改变该值，故不会因装备变动误触发印牌；
--- 破橹①（视为拥有范围内角色武器技能）仍按真实攻击范围（含武器）实时同步。
-local function updatePolu(room, player)
+-- 更新攻击范围：重算武器技能并同步范围记录。
+-- do_print 仅在对“烛势”增加攻击范围做响应时为 true；
+-- 装备区变动（自己或他人使用/更换/失去装备）只同步、绝不印牌——
+-- 因为装备带来的范围是“固有范围”，是否触发破橹印牌以烛势的“本轮增加”为准。
+local function updatePolu(room, player, do_print)
   if not player:hasSkill(j_polu.name) then return end
   local prev = player:getMark("j_polu_range")
-  local cur = player:getAttackRange(player:getCardIds("e"))
-  room:setPlayerMark(player, "j_polu_range", cur)
-  -- 同步武将牌上显示的攻击范围（真实范围，含武器）
-  room:setPlayerMark(player, "@j_zhushi_range", player:getAttackRange())
-  -- 前半段：视为拥有攻击范围内角色武器技能（与范围是否变化无关，始终同步）
+  -- 后半段依赖武器技能，先重算授予（部分武器技能会影响攻击范围）
   recomputeGrants(room, player)
+  local cur = player:getAttackRange()
+  room:setPlayerMark(player, "j_polu_range", cur)
+  -- 同步武将牌上显示的攻击范围
+  room:setPlayerMark(player, "@j_zhushi_range", cur)
+  -- 非印牌时机：只同步记录，返回
+  if not do_print then return end
   -- 防嵌套：视为使用牌引发的新变化只更新记录，不再递归询问
   if room:getTag("j_polu_lock") then return end
   -- 仅在“增加”时发动；范围减少（如轮次结束加成消失）不触发
@@ -133,7 +135,8 @@ local function updatePolu(room, player)
   room:setTag("j_polu_lock", false)
 end
 
--- 攻击范围检测时机：回合开始 / 轮次开始 / 装备区变动 / 烛势发动后
+-- 攻击范围同步时机：回合开始 / 轮次开始 / 装备区变动 / 烛势发动后。
+-- 前三处只“同步”范围记录与武器技能（不印牌）；只有烛势发动后才允许印牌。
 j_polu:addEffect(fk.TurnStart, {
   global = true,
   -- 自动发动（内部再按需询问），避免默认的“是否发动”弹窗
@@ -172,6 +175,7 @@ j_polu:addEffect(fk.AfterCardsMove, {
     return false
   end,
   on_use = function(self, event, target, player, data)
+    -- 装备区变动（自己或他人使用/更换/失去装备）：仅同步范围记录，绝不印牌
     updatePolu(player.room, player)
   end,
 })
@@ -194,7 +198,8 @@ j_polu:addEffect(fk.AfterSkillEffect, {
     return skname == "j_zhushi"
   end,
   on_use = function(self, event, target, player, data)
-    updatePolu(player.room, player)
+    -- 烛势发动后：允许触发印牌
+    updatePolu(player.room, player, true)
   end,
 })
 
@@ -214,7 +219,7 @@ j_polu:addTest(function(room, me)
   end)
 end)
 
--- 测试：自身装备武器不触发破橹印牌（非装备来源范围不变），真实范围与武器技能照常同步
+-- 测试：自己装备/更换/失去装备只同步攻击范围，不应触发破橹印牌
 j_polu:addTest(function(room, me)
   local blade
   FkTest.runInRoom(function()
@@ -223,46 +228,33 @@ j_polu:addTest(function(room, me)
     blade = room:printCard("blade", Card.Spade, 1)
   end)
   FkTest.runInRoom(function()
-    local usedNames = {}
-    local promptCount = 0
+    local prompts = 0
     local origChoice = room.askToChoice
     local origUse = room.askToUseVirtualCard
     room.askToChoice = function(self, who, params)
-      if who == me then promptCount = promptCount + 1 end
+      if who == me then prompts = prompts + 1 end
       return origChoice(self, who, params)
     end
     room.askToUseVirtualCard = function(self, who, params)
-      if who == me then
-        table.insert(usedNames, params.name)
-        return true
-      end
+      if who == me then prompts = prompts + 1; return true end
       return origUse(self, who, params)
     end
+    -- 装备武器（范围 1→3）：只同步，不印牌
     room:moveCardTo(blade.id, Player.Equip, me, fk.ReasonPut, "test")
+    lu.assertEquals(prompts, 0, "自己装备武器不应触发破橹印牌")
+    lu.assertEquals(me:getMark("j_polu_range"), 3, "装备后范围记录应同步为3")
+    lu.assertEquals(me:getAttackRange(), 3, "实际攻击范围应为3")
+    lu.assertEquals(me:getMark("@j_zhushi_range"), 3, "武将牌应显示当前攻击范围")
+    -- 卸下武器（范围 3→1）：也不印牌
+    room:moveCardTo(blade.id, Card.DrawPile, nil, fk.ReasonPut, "test")
     room.askToChoice = origChoice
     room.askToUseVirtualCard = origUse
-    lu.assertEquals(promptCount, 0, "自身装备武器不应触发破橹印牌")
-    lu.assertEquals(#usedNames, 0, "自身装备武器不应视为使用牌")
-    lu.assertEquals(me:getMark("j_polu_range"), 1, "非装备来源范围应保持不变")
-    lu.assertEquals(me:getAttackRange(), 3, "真实攻击范围应为武器范围3")
-    lu.assertEquals(me:getMark("@j_zhushi_range"), 3, "武将牌应显示真实攻击范围")
-
-    -- 卸下武器（真实范围减少）同样不触发印牌
-    local promptCount2 = 0
-    local origChoice2 = room.askToChoice
-    room.askToChoice = function(self, who, params)
-      if who == me then promptCount2 = promptCount2 + 1 end
-      return origChoice2(self, who, params)
-    end
-    room:moveCardTo(blade.id, Card.DrawPile, nil, fk.ReasonPut, "test")
-    room.askToChoice = origChoice2
-    lu.assertEquals(promptCount2, 0, "卸下武器不应触发破橹印牌")
-    lu.assertEquals(me:getMark("j_polu_range"), 1, "非装备来源范围仍为1")
-    lu.assertEquals(me:getAttackRange(), 1, "真实攻击范围应回到1")
+    lu.assertEquals(prompts, 0, "卸下武器不应触发破橹印牌")
+    lu.assertEquals(me:getMark("j_polu_range"), 1, "卸下后范围记录应同步为1")
   end)
 end)
 
--- 测试：其他角色装备武器不触发 me 的破橹印牌（me 非装备来源范围不变）
+-- 测试：他人装备武器同样不触发印牌（只同步范围 / 授予武器技能）
 j_polu:addTest(function(room, me)
   local comp2 = room.players[2]
   local bow
@@ -272,16 +264,22 @@ j_polu:addTest(function(room, me)
     bow = room:printCard("crossbow", Card.Diamond, 1)
   end)
   FkTest.runInRoom(function()
-    local promptCount = 0
+    local prompts = 0
     local origChoice = room.askToChoice
+    local origUse = room.askToUseVirtualCard
     room.askToChoice = function(self, who, params)
-      if who == me then promptCount = promptCount + 1 end
+      if who == me then prompts = prompts + 1 end
       return origChoice(self, who, params)
+    end
+    room.askToUseVirtualCard = function(self, who, params)
+      if who == me then prompts = prompts + 1; return true end
+      return origUse(self, who, params)
     end
     room:moveCardTo(bow.id, Player.Equip, comp2, fk.ReasonPut, "test")
     room.askToChoice = origChoice
-    lu.assertEquals(promptCount, 0, "其他角色装备武器不应触发me破橹印牌")
-    lu.assertEquals(me:getMark("j_polu_range"), 1, "me非装备来源范围应不变")
+    room.askToUseVirtualCard = origUse
+    lu.assertEquals(prompts, 0, "他人装备武器不应触发破橹印牌")
+    lu.assertTrue(me:hasSkill("#crossbow_skill"), "仍应视为拥有其武器技能")
   end)
 end)
 
@@ -322,4 +320,45 @@ j_polu:addTest(function(room, me)
   end)
 end)
 
+-- 测试：先装备武器（仅同步、不印牌），再用烛势加范围 → 只按烛势实际增加值印牌，武器加成不计入
+j_polu:addTest(function(room, me)
+  local blade
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, "j_polu|j_zhushi", nil, false, true)
+    room:setPlayerMark(me, "j_polu_range", 1)
+    blade = room:printCard("blade", Card.Spade, 1)
+  end)
+  FkTest.runInRoom(function()
+    local used = 0
+    local origChoice = room.askToChoice
+    local origUse = room.askToUseVirtualCard
+    room.askToChoice = function(self, who, params)
+      if who == me then
+        for _, c in ipairs(params.choices) do
+          if #Fk:translate(c) <= 3 then return c end
+        end
+        return params.choices[1]
+      end
+      return origChoice(self, who, params)
+    end
+    room.askToUseVirtualCard = function(self, who, params)
+      if who == me then used = used + 1; return true end
+      return origUse(self, who, params)
+    end
+    -- 装备武器：范围 1→3，仅同步，不印牌
+    room:moveCardTo(blade.id, Player.Equip, me, fk.ReasonPut, "test")
+    lu.assertEquals(used, 0, "装备武器不应印牌")
+    lu.assertEquals(me:getMark("j_polu_range"), 3, "装备后范围记录应为3")
+    -- 烛势本轮 +2：范围 3→5，只应印 2 张单字牌（武器加成不计入本次增加值）
+    room:setPlayerMark(me, "j_zhushi_range-round", 2)
+    room.logic:trigger(fk.AfterSkillEffect, me, { skill = Fk.skills["j_zhushi"] })
+    room.askToChoice = origChoice
+    room.askToUseVirtualCard = origUse
+    lu.assertEquals(used, 2, "烛势+2在已有武器范围上仍只印2张")
+    lu.assertEquals(me:getMark("j_polu_range"), 5, "范围记录应为5")
+  end)
+end)
+
 return j_polu
+
+
