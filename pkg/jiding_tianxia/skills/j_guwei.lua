@@ -32,6 +32,30 @@ j_guwei:addEffect(fk.CardUsing, {
 })
 
 -- 出牌阶段结束时
+-- 只收集中已加入本局游戏的牌名：牌堆、弃牌堆、处理区、以及所有角色的手牌/装备/判定区。
+-- 避免"印"出本局并不存在的牌（与破橹同规则）。
+local function inGameNames(room, matchFunc)
+  local names = {}
+  local function add(ids)
+    for _, id in ipairs(ids or {}) do
+      local card = Fk:getCardById(id)
+      if card and card.trueName and card.trueName ~= ""
+        -- 只收引擎已注册、可被 cloneCard 的牌名（排除派生卡）
+        and Fk.all_card_types[card.trueName]
+        and matchFunc(card) then
+        table.insertIfNeed(names, card.trueName)
+      end
+    end
+  end
+  add(room.draw_pile)
+  add(room.discard_pile)
+  add(room.processing_area)
+  for _, p in ipairs(room.players) do
+    add(p:getCardIds("hej"))
+  end
+  return names
+end
+
 j_guwei:addEffect(fk.EventPhaseEnd, {
   anim_type = "offensive",
   can_trigger = function(self, event, target, player, data)
@@ -52,27 +76,17 @@ j_guwei:addEffect(fk.EventPhaseEnd, {
   on_use = function(self, event, target, player, data)
     local room = player.room
     local types = player:getTableMark("j_guwei_types-turn")
-    local names = {}
-    -- 只收集引擎中已注册、可被 cloneCard 的牌名（排除派生卡如 hx__扑克牌，其 trueName 未注册）
-    local function collect(card)
-      if Fk.all_card_types[card.trueName] then
-        table.insertIfNeed(names, card.trueName)
-      end
-    end
+    local names
     if #types == 1 then
-      -- 一种类别 → 视为使用一张基本牌
-      for _, card in pairs(Fk.all_card_types) do
-        if card.type == Card.TypeBasic then
-          collect(card)
-        end
-      end
+      -- 一种类别 → 视为使用一张基本牌（仅限本局已加入游戏的牌）
+      names = inGameNames(room, function(card)
+        return card.type == Card.TypeBasic
+      end)
     else
-      -- 至少三种类别 → 视为使用一张普通锦囊牌
-      for _, card in pairs(Fk.all_card_types) do
-        if card.type == Card.TypeTrick and card.sub_type ~= Card.SubtypeDelayedTrick then
-          collect(card)
-        end
-      end
+      -- 至少三种类别 → 视为使用一张普通锦囊牌（仅限本局已加入游戏的牌）
+      names = inGameNames(room, function(card)
+        return card.type == Card.TypeTrick and card.sub_type ~= Card.SubtypeDelayedTrick
+      end)
     end
     if #names == 0 then return end
     room:askToUseVirtualCard(player, {
@@ -151,6 +165,62 @@ j_guwei:addTest(function(room, me)
     room.askToUseVirtualCard = origUseVirtual
     lu.assertNotNil(offeredNames, "应询问视为使用一张普通锦囊")
     lu.assertTrue(table.contains(offeredNames, "ex_nihilo"), "普通锦囊候选应包含无中生有")
+    lu.assertFalse(table.contains(offeredNames, "indulgence"), "延时锦囊不应在候选内")
+  end)
+end)
+
+-- 测试：候选只含"本局已加入游戏的牌名"，不印本局没有的牌
+j_guwei:addTest(function(room, me)
+  local c1, c2, c3
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_guwei.name)
+    room.current = me
+    me.phase = Player.Play
+    c1 = room:printCard("slash", Card.Spade, 1)
+    c2 = room:printCard("ex_nihilo", Card.Heart, 2)
+    c3 = room:printCard("crossbow", Card.Club, 3)
+    room:obtainCard(me, { c1, c2, c3 }, true, fk.ReasonDraw, me, "test")
+  end)
+  FkTest.runInRoom(function()
+    room.logic:trigger(fk.CardUsing, me, { card = c1, from = me })
+    room.logic:trigger(fk.CardUsing, me, { card = c2, from = me })
+    room.logic:trigger(fk.CardUsing, me, { card = c3, from = me })
+
+    local offeredNames = nil
+    local origInvoke = room.askToSkillInvoke
+    local origUseVirtual = room.askToUseVirtualCard
+    room.askToSkillInvoke = function(self, who, params) return true end
+    room.askToUseVirtualCard = function(self, who, params)
+      if who == me then
+        offeredNames = params.name
+        return true
+      end
+      return origUseVirtual(self, who, params)
+    end
+    room.logic:trigger(fk.EventPhaseEnd, me, { phase = Player.Play })
+    room.askToSkillInvoke = origInvoke
+    room.askToUseVirtualCard = origUseVirtual
+    lu.assertNotNil(offeredNames, "应询问视为使用一张普通锦囊")
+
+    -- 独立统计本局已加入游戏的牌名
+    local inGame = {}
+    local addIds = function(ids)
+      for _, id in ipairs(ids or {}) do
+        local c = Fk:getCardById(id)
+        if c and c.trueName and c.trueName ~= "" then
+          table.insertIfNeed(inGame, c.trueName)
+        end
+      end
+    end
+    addIds(room.draw_pile)
+    addIds(room.discard_pile)
+    for _, p in ipairs(room.players) do addIds(p:getCardIds("hej")) end
+
+    lu.assertTrue(#offeredNames > 0, "应有候选")
+    for _, n in ipairs(offeredNames) do
+      lu.assertTrue(table.contains(inGame, n), "候选不应包含本局游戏中没有的牌：" .. tostring(n))
+      lu.assertNotNil(Fk.all_card_types[n], "候选牌名应已注册：" .. tostring(n))
+    end
     lu.assertFalse(table.contains(offeredNames, "indulgence"), "延时锦囊不应在候选内")
   end)
 end)
