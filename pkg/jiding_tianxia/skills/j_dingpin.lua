@@ -12,7 +12,10 @@ Fk:loadTranslationTable{
   [":j_dingpin"] = "出牌阶段限一次，你可以选择一名角色，交给其至多3张牌，以此定其乡品：至少1张（下品），其本轮使用牌无距离限制；交至少2张（中品），你与其本轮使用或打出手牌时摸一张牌；交至少3张（上品），该角色与你本轮使用牌无次数限制。",
 
   ["#j_dingpin"] = "定品：选择一名角色，交给其至多3张手牌定其乡品",
-  ["@j_dingpin_grade"] = "乡品",
+  -- @@ 前缀标记只显示翻译后的纯文字（勿用带后缀的 @ 标记，会显示原始标记名）
+  ["@@j_dingpin_pin1-round"] = "下品",
+  ["@@j_dingpin_pin2-round"] = "中品",
+  ["@@j_dingpin_pin3-round"] = "上品",
 }
 
 -- 出牌阶段限一次：选一名角色，交至多3张手牌
@@ -44,8 +47,11 @@ j_dingpin:addEffect("active", {
     -- 交给其牌（明置）
     room:moveCardTo(ids, Card.PlayerHand, target, fk.ReasonGive, j_dingpin.name, nil, true, player)
     local n = #ids
-    -- 乡品等级（显示用）
-    room:setPlayerMark(target, "@j_dingpin_grade-round", n)
+    -- 乡品等级显示（@@ 标记 → 纯文字"下品/中品/上品"，仅显示最高档）
+    room:setPlayerMark(target, "@@j_dingpin_pin1-round", 0)
+    room:setPlayerMark(target, "@@j_dingpin_pin2-round", 0)
+    room:setPlayerMark(target, "@@j_dingpin_pin3-round", 0)
+    room:setPlayerMark(target, ("@@j_dingpin_pin%d-round"):format(math.min(n, 3)), 1)
     -- 下品（至少1张）：其本轮使用牌无距离限制
     room:setPlayerMark(target, MarkEnum.BypassDistancesLimit .. "-round", 1)
     -- 中品（至少2张）：你与其本轮使用或打出手牌时摸一张牌
@@ -117,7 +123,9 @@ j_dingpin:addTest(function(room, me)
     spec:on_use(room, { from = me, tos = { comp2 }, cards = { c1.id, c2.id } })
 
     lu.assertTrue(table.contains(comp2:getCardIds("h"), c1.id), "目标应获得交给的牌")
-    lu.assertEquals(comp2:getMark("@j_dingpin_grade-round"), 2, "乡品等级应为2")
+    lu.assertEquals(comp2:getMark("@@j_dingpin_pin2-round"), 1, "乡品应显示为中品")
+    lu.assertEquals(comp2:getMark("@@j_dingpin_pin1-round"), 0, "只显示最高档，不应显示下品")
+    lu.assertEquals(comp2:getMark("@@j_dingpin_pin3-round"), 0, "只显示最高档，不应显示上品")
     lu.assertNotNil(comp2:hasMark(MarkEnum.BypassDistancesLimit), "下品：目标使用牌应无距离限制")
     lu.assertEquals(comp2:getMark("j_dingpin_mid-round"), 1, "中品：目标应有摸牌标记")
     lu.assertEquals(me:getMark("j_dingpin_mid-round"), 1, "中品：你应有摸牌标记")
@@ -149,7 +157,8 @@ j_dingpin:addTest(function(room, me)
     end
     spec:on_use(room, { from = me, tos = { comp2 }, cards = { c1.id, c2.id, c3.id } })
 
-    lu.assertEquals(comp2:getMark("@j_dingpin_grade-round"), 3, "乡品等级应为3")
+    lu.assertEquals(comp2:getMark("@@j_dingpin_pin3-round"), 1, "乡品应显示为上品")
+    lu.assertEquals(comp2:getMark("@@j_dingpin_pin1-round"), 0, "只显示最高档，不应显示下品")
     lu.assertNotNil(comp2:hasMark(MarkEnum.BypassTimesLimit), "上品：目标使用牌应无次数限制")
     lu.assertNotNil(me:hasMark(MarkEnum.BypassTimesLimit), "上品：你使用牌应无次数限制")
 
