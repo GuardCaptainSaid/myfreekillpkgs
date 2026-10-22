@@ -1,24 +1,24 @@
 -- 计陈群·定品
--- 出牌阶段限一次，你可以选择一名角色，交给其至多3张牌，以此定其乡品：
--- 至少1张（下品）：其本轮使用牌无距离限制；
--- 交至少2张（中品）：你与其本轮使用或打出手牌时摸一张牌；
--- 交至少3张（上品）：该角色与你本轮使用牌无次数限制。
+-- 出牌阶段限一次，你可以选择一名其他角色，交给其至多3张牌，以此定其乡品：
+-- 至少1张（下品）：你与其本轮使用牌无距离限制；
+-- 交至少2张（中品）：你本轮使用或打出手牌时摸一张牌；
+-- 交至少3张（上品）：其本轮使用牌无次数限制。
 local j_dingpin = fk.CreateSkill {
   name = "j_dingpin",
 }
 
 Fk:loadTranslationTable{
   ["j_dingpin"] = "定品",
-  [":j_dingpin"] = "出牌阶段限一次，你可以选择一名角色，交给其至多3张牌，以此定其乡品：至少1张（下品），其本轮使用牌无距离限制；交至少2张（中品），你与其本轮使用或打出手牌时摸一张牌；交至少3张（上品），该角色与你本轮使用牌无次数限制。",
+  [":j_dingpin"] = "出牌阶段限一次，你可以选择一名其他角色，交给其至多3张牌，以此定其乡品：至少1张（下品），你与其本轮使用牌无距离限制；交至少2张（中品），你本轮使用或打出手牌时摸一张牌；交至少3张（上品），其本轮使用牌无次数限制。",
 
-  ["#j_dingpin"] = "定品：选择一名角色，交给其至多3张手牌定其乡品",
+  ["#j_dingpin"] = "定品：选择一名其他角色，交给其至多3张手牌定其乡品",
   -- @@ 前缀标记只显示翻译后的纯文字（勿用带后缀的 @ 标记，会显示原始标记名）
   ["@@j_dingpin_pin1-round"] = "下品",
   ["@@j_dingpin_pin2-round"] = "中品",
   ["@@j_dingpin_pin3-round"] = "上品",
 }
 
--- 出牌阶段限一次：选一名角色，交至多3张手牌
+-- 出牌阶段限一次：选一名其他角色，交至多3张手牌
 j_dingpin:addEffect("active", {
   anim_type = "control",
   prompt = "#j_dingpin",
@@ -33,7 +33,7 @@ j_dingpin:addEffect("active", {
     return #selected < 3 and table.contains(player:getCardIds("h"), to_select)
   end,
   target_filter = function(self, player, to_select, selected, selected_cards)
-    return #selected == 0 and #selected_cards > 0
+    return #selected == 0 and to_select ~= player and #selected_cards > 0
   end,
   -- 注意：feasible 参数顺序为 (player, selected_targets, selected_cards)
   feasible = function(self, player, selected_targets, selected_cards)
@@ -52,17 +52,16 @@ j_dingpin:addEffect("active", {
     room:setPlayerMark(target, "@@j_dingpin_pin2-round", 0)
     room:setPlayerMark(target, "@@j_dingpin_pin3-round", 0)
     room:setPlayerMark(target, ("@@j_dingpin_pin%d-round"):format(math.min(n, 3)), 1)
-    -- 下品（至少1张）：其本轮使用牌无距离限制
+    -- 下品（至少1张）：你与其本轮使用牌无距离限制
     room:setPlayerMark(target, MarkEnum.BypassDistancesLimit .. "-round", 1)
-    -- 中品（至少2张）：你与其本轮使用或打出手牌时摸一张牌
+    room:setPlayerMark(player, MarkEnum.BypassDistancesLimit .. "-round", 1)
+    -- 中品（至少2张）：你本轮使用或打出手牌时摸一张牌
     if n >= 2 then
-      room:setPlayerMark(target, "j_dingpin_mid-round", 1)
       room:setPlayerMark(player, "j_dingpin_mid-round", 1)
     end
-    -- 上品（至少3张）：该角色与你本轮使用牌无次数限制
+    -- 上品（至少3张）：其本轮使用牌无次数限制
     if n >= 3 then
       room:setPlayerMark(target, MarkEnum.BypassTimesLimit .. "-round", 1)
-      room:setPlayerMark(player, MarkEnum.BypassTimesLimit .. "-round", 1)
     end
     -- 供典律判定：本回合发动过定品
     room:setPlayerMark(player, "j_dingpin_used-turn", 1)
@@ -101,7 +100,7 @@ j_dingpin:addEffect(fk.CardResponding, {
   end,
 })
 
--- 测试：交2张牌 → 目标获得下品+中品，陈群获得中品，记录典律联动标记
+-- 测试：交2张牌 → 下品双方无距离限制；中品仅你摸牌；不达上品则无人无次数限制
 j_dingpin:addTest(function(room, me)
   local comp2 = room.players[2]
   local c1, c2
@@ -127,14 +126,15 @@ j_dingpin:addTest(function(room, me)
     lu.assertEquals(comp2:getMark("@@j_dingpin_pin1-round"), 0, "只显示最高档，不应显示下品")
     lu.assertEquals(comp2:getMark("@@j_dingpin_pin3-round"), 0, "只显示最高档，不应显示上品")
     lu.assertNotNil(comp2:hasMark(MarkEnum.BypassDistancesLimit), "下品：目标使用牌应无距离限制")
-    lu.assertEquals(comp2:getMark("j_dingpin_mid-round"), 1, "中品：目标应有摸牌标记")
+    lu.assertNotNil(me:hasMark(MarkEnum.BypassDistancesLimit), "下品：你使用牌应无距离限制")
     lu.assertEquals(me:getMark("j_dingpin_mid-round"), 1, "中品：你应有摸牌标记")
+    lu.assertEquals(comp2:getMark("j_dingpin_mid-round"), 0, "中品只作用于你，目标不应有摸牌标记")
     lu.assertEquals(comp2:getMark(MarkEnum.BypassTimesLimit .. "-round"), 0, "未达上品不应有无次数限制")
     lu.assertEquals(me:getMark("j_dingpin_used-turn"), 1, "应记录本回合发动过定品")
   end)
 end)
 
--- 测试：交3张牌 → 双方均获得上品（无次数限制）；中品下使用手牌摸一张牌
+-- 测试：交3张牌 → 上品仅目标无次数限制；中品仅你使用手牌摸一张牌（目标使用不摸）
 j_dingpin:addTest(function(room, me)
   local comp2 = room.players[2]
   local c1, c2, c3, s1
@@ -160,16 +160,27 @@ j_dingpin:addTest(function(room, me)
     lu.assertEquals(comp2:getMark("@@j_dingpin_pin3-round"), 1, "乡品应显示为上品")
     lu.assertEquals(comp2:getMark("@@j_dingpin_pin1-round"), 0, "只显示最高档，不应显示下品")
     lu.assertNotNil(comp2:hasMark(MarkEnum.BypassTimesLimit), "上品：目标使用牌应无次数限制")
-    lu.assertNotNil(me:hasMark(MarkEnum.BypassTimesLimit), "上品：你使用牌应无次数限制")
+    lu.assertNil(me:hasMark(MarkEnum.BypassTimesLimit), "上品只作用于目标，你不应有无次数限制")
 
-    -- 中品：目标使用手牌时摸一张牌
-    local handBefore = #comp2:getCardIds("h")
+    -- 中品只作用于你：目标使用手牌不应摸牌
+    local compHand = #comp2:getCardIds("h")
     room.logic:trigger(fk.CardUsing, comp2, {
       from = comp2,
       card = Fk:cloneCard("slash"),
       subcardsFromInfo = { { cardId = s1.id, fromArea = Card.PlayerHand } },
     })
-    lu.assertEquals(#comp2:getCardIds("h"), handBefore + 1, "中品：使用手牌后应摸一张牌")
+    lu.assertEquals(#comp2:getCardIds("h"), compHand, "中品只作用于你，目标使用手牌不应摸牌")
+
+    -- 你使用手牌应摸一张牌
+    local mySlash = room:printCard("slash", Card.Spade, 3)
+    room:obtainCard(me, { mySlash }, true, fk.ReasonDraw, me, "test")
+    local myHand = #me:getCardIds("h")
+    room.logic:trigger(fk.CardUsing, me, {
+      from = me,
+      card = Fk:cloneCard("slash"),
+      subcardsFromInfo = { { cardId = mySlash.id, fromArea = Card.PlayerHand } },
+    })
+    lu.assertEquals(#me:getCardIds("h"), myHand + 1, "中品：你使用手牌后应摸一张牌")
   end)
 end)
 
