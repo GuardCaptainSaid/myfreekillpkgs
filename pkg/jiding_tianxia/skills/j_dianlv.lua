@@ -14,14 +14,26 @@ Fk:loadTranslationTable{
   ["#j_dianlv-slash"] = "典律（本回合发动过定品）：可将一张手牌当做【杀】使用",
 }
 
--- 所有普通锦囊牌名（收集引擎已注册的卡牌类型，排除延时锦囊）
-local function commonTrickNames()
+-- 只收集"本局已加入游戏"的普通锦囊牌名：牌堆、弃牌堆、处理区、各角色手牌/装备/判定区。
+-- 不可"印"出本局并不存在的牌（项目约定：视为使用牌的候选一律限定为已加入游戏的牌）。
+local function commonTrickNames(room)
   local names = {}
-  for _, card in pairs(Fk.all_card_types) do
-    if card.type == Card.TypeTrick and card.sub_type ~= Card.SubtypeDelayedTrick
-      and Fk.all_card_types[card.trueName] then
-      table.insertIfNeed(names, card.trueName)
+  local function add(ids)
+    for _, id in ipairs(ids or {}) do
+      local card = Fk:getCardById(id)
+      if card and card.trueName and card.trueName ~= ""
+        -- 只收引擎已注册、可被 cloneCard 的牌名（排除派生卡）
+        and Fk.all_card_types[card.trueName]
+        and card.type == Card.TypeTrick and card.sub_type ~= Card.SubtypeDelayedTrick then
+        table.insertIfNeed(names, card.trueName)
+      end
     end
+  end
+  add(room.draw_pile)
+  add(room.discard_pile)
+  add(room.processing_area)
+  for _, p in ipairs(room.players) do
+    add(p:getCardIds("hej"))
   end
   return names
 end
@@ -48,9 +60,10 @@ j_dianlv:addEffect("active", {
     local player = effect.from
     local cardId = effect.cards and effect.cards[1]
     if not cardId then return end
-    -- 弃置该手牌，当做任意一张普通锦囊牌使用（namebox 只列出当前有合法目标的锦囊）
+    -- 弃置该手牌，当做一张本局已加入游戏的普通锦囊牌使用
+    -- （namebox 只列出当前有合法目标的锦囊）
     local use = room:askToUseVirtualCard(player, {
-      name = commonTrickNames(),
+      name = commonTrickNames(room),
       skill_name = j_dianlv.name,
       subcards = { cardId },
       cancelable = true,
@@ -71,9 +84,10 @@ j_dianlv:addEffect("active", {
   end,
 })
 
--- 测试：发动典律 → 询问普通锦囊（含弃置的手牌作为实体牌）；发动过定品则追加询问手牌当杀
+-- 测试：发动典律 → 只询问"本局已加入游戏"的普通锦囊（含弃置的手牌作为实体牌）；
+-- 发动过定品则追加询问手牌当杀
 j_dianlv:addTest(function(room, me)
-  local c1, c2
+  local c1, c2, trick
   FkTest.runInRoom(function()
     room:handleAddLoseSkills(me, j_dianlv.name)
     room.current = me
@@ -81,6 +95,9 @@ j_dianlv:addTest(function(room, me)
     c1 = room:printCard("slash", Card.Spade, 7)
     c2 = room:printCard("jink", Card.Heart, 8)
     room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
+    -- 一张本局确实存在的普通锦囊（放在牌堆里，非手牌）
+    trick = room:printCard("ex_nihilo", Card.Heart, 5)
+    table.insert(room.draw_pile, 1, trick.id)
   end)
   FkTest.runInRoom(function()
     local calls = {}
@@ -105,8 +122,26 @@ j_dianlv:addTest(function(room, me)
     lu.assertEquals(#calls, 1, "未发动定品只应有一次询问")
     lu.assertTrue(type(calls[1].name) == "table", "应以候选锦囊名列表询问")
     lu.assertTrue(#calls[1].name > 0, "候选应包含普通锦囊")
+    lu.assertTrue(table.contains(calls[1].name, "ex_nihilo"), "候选应包含本局已存在的普通锦囊")
     lu.assertFalse(table.contains(calls[1].name, "lightning"), "不应包含延时锦囊")
     lu.assertTrue(table.contains(calls[1].subcards or {}, c1.id), "询问应带上弃置的手牌")
+
+    -- 候选不得包含本局游戏中没有的牌名
+    local inGame = {}
+    local addIds = function(ids)
+      for _, id in ipairs(ids or {}) do
+        local c = Fk:getCardById(id)
+        if c and c.trueName and c.trueName ~= "" then
+          table.insertIfNeed(inGame, c.trueName)
+        end
+      end
+    end
+    addIds(room.draw_pile)
+    addIds(room.discard_pile)
+    for _, p in ipairs(room.players) do addIds(p:getCardIds("hej")) end
+    for _, n in ipairs(calls[1].name) do
+      lu.assertTrue(table.contains(inGame, n), "候选不应包含本局游戏中没有的牌：" .. tostring(n))
+    end
 
     -- 发动过定品：追加一次杀询问
     room:setPlayerMark(me, "j_dingpin_used-turn", 1)
