@@ -87,9 +87,7 @@ end
 local function updatePolu(room, player)
   if not player:hasSkill(j_polu.name) then return end
   local prev = player:getMark("j_polu_range")
-  local excl = player:getCardIds("e")
-  local cur = player:getAttackRange(excl)
-  fk.qInfo("POLU_DEBUG prev=" .. prev .. " cur=" .. cur .. " excl=" .. #excl .. " real=" .. player:getAttackRange())
+  local cur = player:getAttackRange(player:getCardIds("e"))
   room:setPlayerMark(player, "j_polu_range", cur)
   -- 同步武将牌上显示的攻击范围（真实范围，含武器）
   room:setPlayerMark(player, "@j_zhushi_range", player:getAttackRange())
