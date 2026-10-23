@@ -93,8 +93,10 @@ j_xiance:addEffect("active", {
     local target = effect.tos and effect.tos[1]
     local cardId = effect.cards and effect.cards[1]
     if not target or target.dead or not cardId then return end
-    -- 标记为谋策（先标记再交付，交付时仍带标记）
-    room:setCardMark(Fk:getCardById(cardId), "@@j_xiance_mouli", 1)
+    -- 标记为谋策（先标记再交付，交付时仍带标记）；记录谋策的归属者
+    local card = Fk:getCardById(cardId)
+    room:setCardMark(card, "@@j_xiance_mouli", 1)
+    room:setCardMark(card, "j_xiance_owner", player.id)
     if target ~= player then
       room:moveCardTo(cardId, Card.PlayerHand, target, fk.ReasonGive, j_xiance.name, nil, true, player)
     end
@@ -102,21 +104,35 @@ j_xiance:addEffect("active", {
   end,
 })
 
--- 牌进出角色手牌区时同步授予/收回持有者子技能
+-- 牌进出角色手牌区 / 谋策牌进入弃牌堆时同步
 j_xiance:addEffect(fk.AfterCardsMove, {
   global = true,
   on_cost = function() return true end,
   can_trigger = function(self, event, target, player, data)
     if not player:hasSkill(j_xiance.name) or player.dead then return false end
     for _, move in ipairs(data) do
-      if move.fromArea == Card.PlayerHand or move.toArea == Card.PlayerHand then
+      if move.fromArea == Card.PlayerHand or move.toArea == Card.PlayerHand
+        or move.toArea == Card.DiscardPile then
         return true
       end
     end
     return false
   end,
   on_use = function(self, event, target, player, data)
-    syncHolderGrants(player.room)
+    local room = player.room
+    -- 谋策标记只在牌进入弃牌堆时销毁
+    for _, move in ipairs(data) do
+      if move.toArea == Card.DiscardPile then
+        for _, info in ipairs(move.moveInfo or {}) do
+          local card = Fk:getCardById(info.cardId)
+          if card and card:getMark("@@j_xiance_mouli") > 0 then
+            room:setCardMark(card, "@@j_xiance_mouli", 0)
+            room:setCardMark(card, "j_xiance_owner", 0)
+          end
+        end
+      end
+    end
+    syncHolderGrants(room)
   end,
 })
 
@@ -144,17 +160,14 @@ j_xiance_holder:addEffect("active", {
     local cardId = effect.cards and effect.cards[1]
     if not cardId then return end
     -- 当作本局已加入游戏的普通锦囊使用（namebox 只列出当前有合法目标的）
-    local use = room:askToUseVirtualCard(player, {
+    room:askToUseVirtualCard(player, {
       name = inGameCommonTricks(room),
       skill_name = j_xiance_holder.name,
       subcards = { cardId },
       cancelable = true,
       prompt = "#j_xiance_holder",
     })
-    if use then
-      -- 使用后不再是“谋策”
-      room:setCardMark(Fk:getCardById(cardId), "@@j_xiance_mouli", 0)
-    end
+    -- 使用后该牌进入弃牌堆，谋策标记在进入弃牌堆时统一销毁
   end,
 })
 
@@ -166,7 +179,8 @@ j_xiance:addEffect(fk.TurnEnd, {
   on_cost = function() return true end,
   can_trigger = function(self, event, target, player, data)
     if not player:hasSkill(j_xiance.name) or player.dead then return false end
-    if not target or target.dead then return false end
+    -- 谋策已在自己手里（已收回）时不再重复收回
+    if not target or target.dead or target == player then return false end
     return hasMouli(target)
   end,
   on_use = function(self, event, target, player, data)
@@ -177,13 +191,12 @@ j_xiance:addEffect(fk.TurnEnd, {
       x = x + (times[Player.HistoryTurn] or 0)
     end
     local mouliIds = table.filter(target:getCardIds("h"), function(cid)
-      return Fk:getCardById(cid):getMark("@@j_xiance_mouli") > 0
+      local card = Fk:getCardById(cid)
+      return card:getMark("@@j_xiance_mouli") > 0 and card:getMark("j_xiance_owner") == player.id
     end)
     for _, cid in ipairs(mouliIds) do
-      -- 收回（移动时仍带谋策标记，可供矫出响应）
+      -- 收回（收回后标记保留，桓范可继续把它当作普通锦囊使用，直到该牌进入弃牌堆）
       room:moveCardTo(cid, Card.PlayerHand, player, fk.ReasonGive, j_xiance.name, nil, true, target)
-      -- 收回后不再是谋策
-      room:setCardMark(Fk:getCardById(cid), "@@j_xiance_mouli", 0)
     end
     syncHolderGrants(room)
     if x > 0 then
@@ -232,6 +245,7 @@ j_xiance:addTest(function(room, me)
     room:obtainCard(comp2, { s1 }, true, fk.ReasonDraw, me, "test")
     -- 标记并交付
     room:setCardMark(Fk:getCardById(c1.id), "@@j_xiance_mouli", 1)
+    room:setCardMark(Fk:getCardById(c1.id), "j_xiance_owner", me.id)
     room:moveCardTo(c1.id, Card.PlayerHand, comp2, fk.ReasonGive, j_xiance.name, nil, true, me)
   end)
   FkTest.runInRoom(function()
@@ -241,9 +255,10 @@ j_xiance:addTest(function(room, me)
     room.logic:trigger(fk.TurnEnd, comp2, {})
 
     lu.assertTrue(table.contains(me:getCardIds("h"), c1.id), "未使用的谋策应被收回")
-    lu.assertTrue(Fk:getCardById(c1.id):getMark("@@j_xiance_mouli") == 0, "收回后应不再是谋策")
+    lu.assertTrue(Fk:getCardById(c1.id):getMark("@@j_xiance_mouli") > 0, "收回后标记应保留到进入弃牌堆")
     lu.assertEquals(#me:getCardIds("h"), myHand + 1 + 2, "收回1张并摸X(=2)张")
     lu.assertFalse(comp2:hasSkill("j_xiance_holder"), "失去谋策后应收回持有者技能")
+    lu.assertTrue(me:hasSkill("j_xiance_holder"), "收回后桓范本人也能使用谋策")
   end)
 end)
 
@@ -258,12 +273,13 @@ j_xiance:addTest(function(room, me)
     c1 = room:printCard("jink", Card.Heart, 3)
     room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
     room:setCardMark(Fk:getCardById(c1.id), "@@j_xiance_mouli", 1)
+    room:setCardMark(Fk:getCardById(c1.id), "j_xiance_owner", me.id)
     room:moveCardTo(c1.id, Card.PlayerHand, comp2, fk.ReasonGive, j_xiance.name, nil, true, me)
-    -- 模拟其回合内当作锦囊使用：离开手牌并清标记
+    -- 模拟其回合内当作锦囊使用：该牌进入弃牌堆（标记应随之销毁）
     room:moveCardTo(c1.id, Card.DiscardPile, nil, fk.ReasonUse, j_xiance_holder.name)
-    room:setCardMark(Fk:getCardById(c1.id), "@@j_xiance_mouli", 0)
   end)
   FkTest.runInRoom(function()
+    lu.assertEquals(Fk:getCardById(c1.id):getMark("@@j_xiance_mouli"), 0, "进入弃牌堆后谋策标记应销毁")
     local myHand = #me:getCardIds("h")
     room.logic:trigger(fk.TurnEnd, comp2, {})
     lu.assertEquals(#me:getCardIds("h"), myHand, "已使用的谋策回合结束不应收回")
