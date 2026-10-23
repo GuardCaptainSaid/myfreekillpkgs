@@ -1,5 +1,5 @@
 -- 计桓范·矫出（限定技）
--- 当你获得谋策牌时，你可以弃置任意张花色互不相同的手牌，视为使用等量的【杀】。
+-- 当你获得“谋策”牌时，你可以弃置任意张花色互不相同的手牌，视为使用等量的【杀】。
 local j_jiaochu = fk.CreateSkill {
   name = "j_jiaochu",
   tags = { Skill.Limited },
@@ -7,30 +7,31 @@ local j_jiaochu = fk.CreateSkill {
 
 Fk:loadTranslationTable{
   ["j_jiaochu"] = "矫出",
-  [":j_jiaochu"] = "限定技，当你获得“谋策”牌时（献策结算完成后），你可以弃置任意张花色互不相同的手牌，视为使用等量的【杀】。",
+  [":j_jiaochu"] = "限定技，当你获得“谋策”牌时，你可以弃置任意张花色互不相同的手牌，视为使用等量的【杀】。",
 
   ["#j_jiaochu-invoke"] = "矫出：是否发动（弃置花色互不相同的手牌，视为使用等量【杀】）？",
   ["#j_jiaochu-discard"] = "矫出：请弃置一张与已选花色不同的手牌（点取消结束）",
   ["j_xiance_cand"] = "手牌",
 }
 
--- 时机：献策（或收回谋策）结算完成后，若此时手中已获得谋策牌
-j_jiaochu:addEffect(fk.AfterSkillEffect, {
+-- 时机：真正“获得”一张带谋策标记的牌时（每获得一次只询问一次）
+j_jiaochu:addEffect(fk.AfterCardsMove, {
   global = true,
   anim_type = "offensive",
   can_trigger = function(self, event, target, player, data)
     if not player:hasSkill(j_jiaochu.name) or player.dead then return false end
     -- 限定技：整局游戏限一次
     if player:getMark("j_jiaochu_used") > 0 then return false end
-    local sk = data and data.skill
-    if not sk then return false end
-    local skel = sk.getSkeleton and sk:getSkeleton() or sk
-    if not skel or skel.name ~= "j_xiance" then return false end
-    -- 结算完成后手中确有“谋策”牌
-    for _, cid in ipairs(player:getCardIds("h")) do
-      local card = Fk:getCardById(cid)
-      if card and card:getMark("@@j_xiance_mouli") > 0 then
-        return true
+    for _, move in ipairs(data) do
+      -- 只会从别处“获得”到手牌；自己手牌区内部挪动不算
+      if move.to == player and move.toArea == Card.PlayerHand
+        and not (move.from == player and move.fromArea == Card.PlayerHand) then
+        for _, info in ipairs(move.moveInfo or {}) do
+          local card = Fk:getCardById(info.cardId)
+          if card and card:getMark("@@j_xiance_mouli") > 0 then
+            return true
+          end
+        end
       end
     end
     return false
@@ -43,7 +44,6 @@ j_jiaochu:addEffect(fk.AfterSkillEffect, {
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room
-    room:setPlayerMark(player, "j_jiaochu_used", 1)
     -- 弃置任意张花色互不相同的手牌（逐张选择，已选花色排除，可取消结束）
     local chosen = {}
     while true do
@@ -68,7 +68,9 @@ j_jiaochu:addEffect(fk.AfterSkillEffect, {
       if not pick or #pick == 0 then break end
       table.insert(chosen, pick[1])
     end
+    -- 一张都没弃则不消耗限定技
     if #chosen == 0 then return end
+    room:setPlayerMark(player, "j_jiaochu_used", 1)
     room:throwCard(chosen, j_jiaochu.name, player, player)
     -- 视为使用等量的【杀】
     for _ = 1, #chosen do
@@ -98,9 +100,12 @@ j_jiaochu:addTest(function(room, me)
     local origInvoke = room.askToSkillInvoke
     local origChooseCards = room.askToChooseCards
     local origUseVirtual = room.askToUseVirtualCard
-    local slashAsks = 0
+    local slashAsks, invokes = 0, 0
     room.askToSkillInvoke = function(self, who, params)
-      if who == me then return true end
+      if who == me and params.skill_name == j_jiaochu.name then
+        invokes = invokes + 1
+        return true
+      end
       return origInvoke(self, who, params)
     end
     -- 依次选两张（黑桃、红桃，花色互不相同），然后取消
@@ -117,14 +122,14 @@ j_jiaochu:addTest(function(room, me)
       return origUseVirtual(self, who, params)
     end
 
-    -- 桓范获得谋策牌，随后献策结算完成
+    -- 桓范从他人处获得谋策牌（一次移动事件）
     room:moveCardTo(m1.id, Card.PlayerHand, me, fk.ReasonGive, "test", nil, true, room.players[3])
-    room.logic:trigger(fk.AfterSkillEffect, me, { skill = { name = "j_xiance" }, who = me })
 
     room.askToSkillInvoke = origInvoke
     room.askToChooseCards = origChooseCards
     room.askToUseVirtualCard = origUseVirtual
 
+    lu.assertEquals(invokes, 1, "获得一次谋策牌只应询问一次矫出")
     lu.assertEquals(slashAsks, 2, "弃2张应视为使用2张杀")
     lu.assertTrue(me:getMark("j_jiaochu_used") > 0, "限定技应记录已使用")
     lu.assertFalse(table.contains(me:getCardIds("h"), c1.id), "所选手牌应被弃置")
@@ -133,29 +138,31 @@ j_jiaochu:addTest(function(room, me)
     local m2 = room:printCard("snatch", Card.Diamond, 6)
     room:setCardMark(Fk:getCardById(m2.id), "@@j_xiance_mouli", 1)
     room:moveCardTo(m2.id, Card.PlayerHand, me, fk.ReasonGive, "test", nil, true, room.players[3])
-    room.logic:trigger(fk.AfterSkillEffect, me, { skill = { name = "j_xiance" }, who = me })
     lu.assertEquals(slashAsks, 2, "限定技整局限一次，不应再次发动")
   end)
 end)
 
--- 测试：手中没有谋策牌 → 献策结算后不触发
+-- 测试：手中已有谋策牌但本次没有“获得”→ 不触发
 j_jiaochu:addTest(function(room, me)
-  local c1
+  local m1
   FkTest.runInRoom(function()
     room:handleAddLoseSkills(me, j_jiaochu.name)
-    c1 = room:printCard("slash", Card.Spade, 7)
-    room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
+    m1 = room:printCard("ex_nihilo", Card.Club, 9)
+    room:setCardMark(Fk:getCardById(m1.id), "@@j_xiance_mouli", 1)
+    room:moveCardTo(m1.id, Card.PlayerHand, me, fk.ReasonGive, "test", nil, true, room.players[3])
   end)
   FkTest.runInRoom(function()
     local invoked = false
     local origInvoke = room.askToSkillInvoke
     room.askToSkillInvoke = function(self, who, params)
-      if who == me then invoked = true end
+      if who == me and params.skill_name == j_jiaochu.name then invoked = true end
       return origInvoke(self, who, params)
     end
-    room.logic:trigger(fk.AfterSkillEffect, me, { skill = { name = "j_xiance" }, who = me })
+    -- 只是其他牌进入弃牌堆（并非获得谋策牌）
+    local c = room:printCard("slash", Card.Spade, 3)
+    room:moveCards{ ids = { c.id }, toArea = Card.DiscardPile, moveReason = fk.ReasonDiscard }
     room.askToSkillInvoke = origInvoke
-    lu.assertFalse(invoked, "手中无谋策牌时不应触发矫出")
+    lu.assertFalse(invoked, "未获得谋策牌时不应询问矫出")
     lu.assertEquals(me:getMark("j_jiaochu_used"), 0, "限定技未消耗")
   end)
 end)
