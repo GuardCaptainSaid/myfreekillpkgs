@@ -5,7 +5,7 @@ extension.extensionName = "AAA new sanguo"
 extension:loadSkillSkelsByPath("./packages/AAA new sanguo/pkg/sheji_dasai/skills")
 
 Fk:loadTranslationTable{
-  ["sheji_dasai"] = "设计大赛优秀作品",
+  ["sheji_dasai"] = "设计大赛",
 }
 
 local shushao_1 = General:new(extension, "shushao_1", "qun", 3, 3)
