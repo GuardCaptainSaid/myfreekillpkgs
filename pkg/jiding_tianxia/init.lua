@@ -179,6 +179,17 @@ Fk:loadTranslationTable{
   ["~ji_yangxiu"] = "我固自以死之晚也……",
 }
 
+General:new(extension, "ji_xinpi", "wei", 3, 4):addSkills { "j_jiansi", "j_shendu", "j_kangci" }
+Fk:loadTranslationTable{
+  ["ji_xinpi"] = "计辛毗",
+  ["#ji_xinpi"] = "伺察强谏",
+  ["designer:ji_xinpi"] = "袁焉",
+  ["illustrator:ji_xinpi"] = "袁焉",
+  ["cv:ji_xinpi"] = "佚名",
+
+  ["~ji_xinpi"] = "忠言逆耳……终不见纳于魏王……",
+}
+
 General:new(extension, "ji_chengyu", "wei", 3, 4):addSkills { "j_hanji", "j_ejin", "j_gulei" }
 Fk:loadTranslationTable{
   ["ji_chengyu"] = "计程昱",
