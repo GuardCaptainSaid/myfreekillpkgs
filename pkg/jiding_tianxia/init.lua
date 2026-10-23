@@ -168,6 +168,17 @@ Fk:loadTranslationTable{
   ["~ji_huanfan"] = "竖子不足与谋……智士之悲，莫过于此……",
 }
 
+General:new(extension, "ji_yangxiu", "wei", 3, 4):addSkills { "j_shichen", "j_xianji" }
+Fk:loadTranslationTable{
+  ["ji_yangxiu"] = "计杨修",
+  ["#ji_yangxiu"] = "恃才放旷",
+  ["designer:ji_yangxiu"] = "袁焉",
+  ["illustrator:ji_yangxiu"] = "袁焉",
+  ["cv:ji_yangxiu"] = "佚名",
+
+  ["~ji_yangxiu"] = "我固自以死之晚也……",
+}
+
 General:new(extension, "ji_chengyu", "wei", 3, 4):addSkills { "j_hanji", "j_ejin", "j_gulei" }
 Fk:loadTranslationTable{
   ["ji_chengyu"] = "计程昱",
