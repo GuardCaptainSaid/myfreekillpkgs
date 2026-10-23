@@ -223,6 +223,17 @@ Fk:loadTranslationTable{
   ["~ji_zaozhi"] = "屯田之策已成……大魏根基……自此而固……",
 }
 
+General:new(extension, "ji_lougui", "wei", 3, 4):addSkills { "j_shuizhan", "j_bingcheng", "j_shazhen" }
+Fk:loadTranslationTable{
+  ["ji_lougui"] = "计娄圭",
+  ["#ji_lougui"] = "水战奇谋",
+  ["designer:ji_lougui"] = "袁焉",
+  ["illustrator:ji_lougui"] = "袁焉",
+  ["cv:ji_lougui"] = "佚名",
+
+  ["~ji_lougui"] = "水寒彻骨……吾谋……终随冰消……",
+}
+
 General:new(extension, "ji_jiaxu", "qun", 3, 3):addSkills { "j_lianpo", "j_mumou" }
 Fk:loadTranslationTable{
   ["ji_jiaxu"] = "计贾诩",
