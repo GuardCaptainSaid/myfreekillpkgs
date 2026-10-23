@@ -212,6 +212,17 @@ Fk:loadTranslationTable{
   ["~ji_chengyu"] = "弃仁之计……终究……难逃人心……",
 }
 
+General:new(extension, "ji_zaozhi", "wei", 3, 4):addSkills { "j_juntun", "j_changzhi", "j_guangji", "j_binggeng" }
+Fk:loadTranslationTable{
+  ["ji_zaozhi"] = "计枣祗",
+  ["#ji_zaozhi"] = "典农兴耕",
+  ["designer:ji_zaozhi"] = "袁焉",
+  ["illustrator:ji_zaozhi"] = "袁焉",
+  ["cv:ji_zaozhi"] = "佚名",
+
+  ["~ji_zaozhi"] = "屯田之策已成……大魏根基……自此而固……",
+}
+
 General:new(extension, "ji_jiaxu", "qun", 3, 3):addSkills { "j_lianpo", "j_mumou" }
 Fk:loadTranslationTable{
   ["ji_jiaxu"] = "计贾诩",
