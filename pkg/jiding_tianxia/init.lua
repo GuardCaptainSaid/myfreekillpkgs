@@ -190,6 +190,17 @@ Fk:loadTranslationTable{
   ["~ji_xinpi"] = "忠言逆耳……终不见纳于魏王……",
 }
 
+General:new(extension, "ji_yangfu", "wei", 3, 4):addSkills { "j_hannan", "j_wanggu", "j_kangji" }
+Fk:loadTranslationTable{
+  ["ji_yangfu"] = "计杨阜",
+  ["#ji_yangfu"] = "智计过人",
+  ["designer:ji_yangfu"] = "袁焉",
+  ["illustrator:ji_yangfu"] = "袁焉",
+  ["cv:ji_yangfu"] = "佚名",
+
+  ["~ji_yangfu"] = "拒马超于冀城……此生已无憾……",
+}
+
 General:new(extension, "ji_chengyu", "wei", 3, 4):addSkills { "j_hanji", "j_ejin", "j_gulei" }
 Fk:loadTranslationTable{
   ["ji_chengyu"] = "计程昱",
