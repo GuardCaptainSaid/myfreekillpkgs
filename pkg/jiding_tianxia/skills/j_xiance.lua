@@ -6,7 +6,7 @@ local j_xiance = fk.CreateSkill {
   name = "j_xiance",
 }
 
--- 持有者的子技能：将“谋策”当作普通锦囊使用（授予/收回由标记同步管理）
+-- 持有者的子技能：把“谋策”当作普通锦囊使用（授予/收回由标记同步管理）
 local j_xiance_holder = fk.CreateSkill {
   name = "j_xiance_holder",
 }
@@ -19,30 +19,16 @@ Fk:loadTranslationTable{
   [":j_xiance_holder"] = "你可以将“谋策”当作一张本局已加入游戏的普通锦囊牌使用。",
 
   ["#j_xiance"] = "献策：选择一名角色，交给其一张手牌作为“谋策”",
-  ["#j_xiance_holder"] = "谋策：将“谋策”当作一张普通锦囊牌使用",
+  ["#j_xiance_holder"] = "谋策：选择一张普通锦囊牌",
   ["@@j_xiance_mouli"] = "谋策",
 }
 
 local function hasMouli(p)
   for _, cid in ipairs(p:getCardIds("h")) do
-    if Fk:getCardById(cid):getMark("@@j_xiance_mouli") > 0 then return true end
+    local card = Fk:getCardById(cid)
+    if card and card:getMark("@@j_xiance_mouli") > 0 then return true end
   end
   return false
-end
-
--- 同步授予/收回持有者子技能：手牌中有“谋策”→授予，没有→收回
-local function syncHolderGrants(room)
-  for _, p in ipairs(room.players) do
-    local has = hasMouli(p)
-    local granted = p:getMark("j_xiance_granted")
-    if has and granted == 0 then
-      room:handleAddLoseSkills(p, "j_xiance_holder", nil, false, true)
-      room:setPlayerMark(p, "j_xiance_granted", 1)
-    elseif not has and granted == 1 then
-      room:handleAddLoseSkills(p, "-j_xiance_holder", nil, false, true)
-      room:setPlayerMark(p, "j_xiance_granted", 0)
-    end
-  end
 end
 
 -- 只收集“本局已加入游戏”的普通锦囊牌名（项目约定：不可印牌）
@@ -65,6 +51,26 @@ local function inGameCommonTricks(room)
     add(p:getCardIds("hej"))
   end
   return names
+end
+
+-- 同步授予/收回持有者子技能：手牌中有“谋策”→授予，没有→收回
+-- 同时刷新可选的锦囊牌名（客户端要读这个标记来渲染下拉框）
+local function syncHolderGrants(room)
+  for _, p in ipairs(room.players) do
+    local has = hasMouli(p)
+    local granted = p:getMark("j_xiance_granted")
+    if has then
+      room:setPlayerMark(p, "j_xiance_tricks", inGameCommonTricks(room))
+      if granted == 0 then
+        room:handleAddLoseSkills(p, "j_xiance_holder", nil, false, true)
+        room:setPlayerMark(p, "j_xiance_granted", 1)
+      end
+    elseif granted == 1 then
+      room:handleAddLoseSkills(p, "-j_xiance_holder", nil, false, true)
+      room:setPlayerMark(p, "j_xiance_granted", 0)
+      room:setPlayerMark(p, "j_xiance_tricks", 0)
+    end
+  end
 end
 
 -- 出牌阶段限一次：选一名角色，交给其一张手牌作为“谋策”
@@ -136,38 +142,48 @@ j_xiance:addEffect(fk.AfterCardsMove, {
   end,
 })
 
--- 持有者回合内可将“谋策”当作普通锦囊使用
-j_xiance_holder:addEffect("active", {
+-- 持有者：将“谋策”当作本局已加入游戏的普通锦囊使用（下拉选择牌名）
+j_xiance_holder:addEffect("viewas", {
   anim_type = "control",
   prompt = "#j_xiance_holder",
-  min_card_num = 1,
-  max_card_num = 1,
-  target_num = 0,
-  can_use = function(self, player)
-    -- 仅持有者回合内（出牌阶段）可用
-    return player.phase == Player.Play and #player:getCardIds("h") > 0
-  end,
+  card_num = 1,
   card_filter = function(self, player, to_select, selected)
-    return #selected == 0 and table.contains(player:getCardIds("h"), to_select)
+    return #selected < 1 and table.contains(player:getCardIds("h"), to_select)
       and Fk:getCardById(to_select):getMark("@@j_xiance_mouli") > 0
   end,
-  -- 注意：feasible 参数顺序为 (player, selected_targets, selected_cards)
-  feasible = function(self, player, selected_targets, selected_cards)
-    return #selected_cards == 1
+  interaction = function(self, player)
+    local names = player:getTableMark("j_xiance_tricks")
+    if #names == 0 then return end
+    local choices = {}
+    for _, n in ipairs(names) do
+      table.insert(choices, Fk:translate(n))
+    end
+    return UI.ComboBox { choices = choices }
   end,
-  on_use = function(self, room, effect)
-    local player = effect.from
-    local cardId = effect.cards and effect.cards[1]
-    if not cardId then return end
-    -- 当作本局已加入游戏的普通锦囊使用（namebox 只列出当前有合法目标的）
-    room:askToUseVirtualCard(player, {
-      name = inGameCommonTricks(room),
-      skill_name = j_xiance_holder.name,
-      subcards = { cardId },
-      cancelable = true,
-      prompt = "#j_xiance_holder",
-    })
-    -- 使用后该牌进入弃牌堆，谋策标记在进入弃牌堆时统一销毁
+  view_as = function(self, player, cards)
+    if #cards ~= 1 then return nil end
+    local data = self.interaction and self.interaction.data
+    if type(data) ~= "string" or data == "" then return nil end
+    local name
+    for _, n in ipairs(player:getTableMark("j_xiance_tricks")) do
+      if Fk:translate(n) == data then
+        name = n
+        break
+      end
+    end
+    if not name or Fk.all_card_types[name] == nil then return nil end
+    local card = Fk:cloneCard(name)
+    if not card then return nil end
+    card.skillName = j_xiance_holder.name
+    card:addSubcard(cards[1])
+    return card
+  end,
+  can_use = function(self, player)
+    return hasMouli(player) and #player:getTableMark("j_xiance_tricks") > 0
+  end,
+  enabled_at_play = function(self, player)
+    -- 客户端也会执行此判定，只能读同步过的标记
+    return #player:getTableMark("j_xiance_tricks") > 0 and hasMouli(player)
   end,
 })
 
@@ -217,7 +233,8 @@ j_xiance:addTest(function(room, me)
     room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
   end)
   FkTest.runInRoom(function()
-    local skel = Fk.skills[j_xiance.name]:getSkeleton()
+    local sk = Fk.skills[j_xiance.name]
+    local skel = sk.getSkeleton and sk:getSkeleton() or sk
     local spec
     for _, sp in ipairs(skel.effect_spec_list) do
       if sp[1] == "active" then spec = sp[3] break end
@@ -228,10 +245,11 @@ j_xiance:addTest(function(room, me)
     lu.assertTrue(table.contains(comp2:getCardIds("h"), c1.id), "目标应获得谋策牌")
     lu.assertTrue(Fk:getCardById(c1.id):getMark("@@j_xiance_mouli") > 0, "该牌应带谋策标记")
     lu.assertTrue(comp2:hasSkill("j_xiance_holder"), "持有者应获得谋策使用技能")
+    lu.assertTrue(#comp2:getTableMark("j_xiance_tricks") > 0, "持有者应拿到可选的锦囊牌名")
   end)
 end)
 
--- 测试：持有者回合结束未使用 → 收回、清标记、桓范摸X（X=其本回合用牌数）
+-- 测试：持有者回合结束未使用 → 收回、标记保留（可自己用）、桓范摸X（X=其本回合用牌数）
 j_xiance:addTest(function(room, me)
   local comp2 = room.players[2]
   local c1, s1
@@ -262,7 +280,7 @@ j_xiance:addTest(function(room, me)
   end)
 end)
 
--- 测试：持有者使用谋策后（离开手牌）回合结束不再收回
+-- 测试：持有者使用谋策后（进入弃牌堆）标记销毁、回合结束不再收回
 j_xiance:addTest(function(room, me)
   local comp2 = room.players[2]
   local c1
