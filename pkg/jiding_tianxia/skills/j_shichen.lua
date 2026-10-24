@@ -20,8 +20,25 @@ Fk:loadTranslationTable{
   ["#j_shichen"] = "识谶：观看一名角色的手牌，标记其中一张为“谶”",
   ["#j_shichen-mark"] = "识谶：请选择其中一张牌标记为“谶”",
   ["#j_shichen-use"] = "识谶：视为使用此“谶”牌（若无法使用则改为摸两张牌）",
+  ["#j_shichen-record"] = "识谶：将 %card 标记为“谶”",
+  ["j_shichen_mark"] = "标记为“谶”",
+
+  -- 标记区：显示「谶 杀 黑桃」
+  ["@j_shichen_chen"] = "谶",
+  ["j_shichen_suit_spade"] = "黑桃",
+  ["j_shichen_suit_heart"] = "红桃",
+  ["j_shichen_suit_club"] = "梅花",
+  ["j_shichen_suit_diamond"] = "方块",
 
   ["@@j_shichen_chen"] = "谶",
+}
+
+-- 花色 → 翻译键（标记区显示用）
+local SUIT_KEY = {
+  [Card.Spade] = "j_shichen_suit_spade",
+  [Card.Heart] = "j_shichen_suit_heart",
+  [Card.Club] = "j_shichen_suit_club",
+  [Card.Diamond] = "j_shichen_suit_diamond",
 }
 
 -- 当前“谶”的牌名与花色（玩家 mark，服务端权威；客户端 viewas 也读这两个标记）
@@ -54,6 +71,8 @@ local function clearChen(room, player)
   room:setPlayerMark(player, "j_shichen_chen_id", 0)
   room:setPlayerMark(player, "j_shichen_chen_name", "")
   room:setPlayerMark(player, "j_shichen_chen_suit", -1)
+  -- 标记区里给玩家看的「谶 xx」
+  room:setPlayerMark(player, "@j_shichen_chen", 0)
   grantConv(room, player, false)
 end
 
@@ -61,9 +80,20 @@ end
 local function setChen(room, player, card)
   clearChen(room, player)
   room:setCardMark(card, "@@j_shichen_chen", 1)
+  -- “谶”可能在别人手里（看不到牌面），所以另外给玩家自己一个可见标记：
+  -- 标记区显示「谶 杀 黑桃」——value 会被 Lua.tr 逐个翻译，故传牌名与花色翻译键
+  local name = (card.trueName and card.trueName ~= "") and card.trueName or card.name
+  local suitKey = SUIT_KEY[card.suit]
+  room:setPlayerMark(player, "@j_shichen_chen",
+    suitKey and { name, suitKey } or { name })
+  room:sendLog{
+    type = "#j_shichen-record",
+    from = player.id,
+    to = { player.id },
+    card = { card.id },
+  }
   room:setPlayerMark(player, "j_shichen_chen_id", card.id)
-  room:setPlayerMark(player, "j_shichen_chen_name",
-    (card.trueName and card.trueName ~= "") and card.trueName or card.name)
+  room:setPlayerMark(player, "j_shichen_chen_name", name)
   room:setPlayerMark(player, "j_shichen_chen_suit", card.suit)
   grantConv(room, player, true)
 end
@@ -88,13 +118,19 @@ j_shichen:addEffect("active", {
     local player = effect.from
     local target = effect.tos and effect.tos[1]
     if not target or target.dead or #target:getCardIds("h") == 0 then return end
-    -- 观看（仅自己可见）
-    local pick = room:askToChooseCard(player, {
-      target = target,
-      flag = "h",
+    local hand = target:getCardIds("h")
+    -- 观看手牌必须用 askToChooseCardsAndChoice（ChooseCardsAndChoiceBox，牌面朝上）。
+    -- 不能用 askToChooseCard：它走 AskForCardChosen（拆牌/顺手那种"盲选"界面），
+    -- 客户端 Client:askForCardChosen 会把非己方手牌全部标成不可见，玩家只能看到背面。
+    local ids = room:askToChooseCardsAndChoice(player, {
+      cards = hand,
+      choices = { "j_shichen_mark" },
       skill_name = j_shichen.name,
       prompt = "#j_shichen-mark",
+      min_num = 1,
+      max_num = 1,
     })
+    local pick = ids and ids[1]
     -- 注意：printCard 生成的牌 id 为负数，只能把 nil / 0 视为未选
     if pick == nil or pick == 0 then return end
     local card = Fk:getCardById(pick)
@@ -200,11 +236,17 @@ j_shichen:addTest(function(room, me)
     room:obtainCard(comp2, { c1, c2 }, true, fk.ReasonDraw, me, "test")
   end)
   FkTest.runInRoom(function()
-    local origChooseCard = room.askToChooseCard
-    room.askToChooseCard = function(self, who, params)
-      if who == me and params.target == comp2 then return c1.id end
-      return origChooseCard(self, who, params)
+    -- 走真实的主动技使用链路（AskForUseActiveSkill → onUse → 观看手牌请求）
+    local origChoose = room.askToChooseCardsAndChoice
+    local seen
+    room.askToChooseCardsAndChoice = function(self, who, params)
+      if who == me then
+        seen = params
+        return { c1.id }, "j_shichen_mark"
+      end
+      return origChoose(self, who, params)
     end
+    FkTest.setNextReplies(me, { FkTest.ReplyUseSkill(j_shichen.name, { comp2 }) })
     local skel = Fk.skills[j_shichen.name]:getSkeleton()
     local spec
     for _, sp in ipairs(skel.effect_spec_list) do
@@ -212,13 +254,20 @@ j_shichen:addTest(function(room, me)
     end
     lu.assertNotNil(spec, "应存在 active 效果")
     lu.assertTrue(spec:can_use(me), "出牌阶段且未发动过应可发动")
-    spec:on_use(room, { from = me, tos = { comp2 }, cards = {} })
-    room.askToChooseCard = origChooseCard
+    room:askToUseActiveSkill(me, { skill_name = j_shichen.name })
+    room.askToChooseCardsAndChoice = origChoose
+
+    -- 观看：必须一次把目标全部手牌都摊开给玩家选（askToChooseCard 会显示背面）
+    lu.assertNotNil(seen, "应弹出观看手牌的界面")
+    lu.assertEquals(#seen.cards, 2, "观看界面应包含目标全部手牌")
+    lu.assertTrue(table.contains(seen.cards, c1.id), "目标手牌应在观看界面里")
+    lu.assertTrue(table.contains(seen.cards, c2.id), "目标手牌应在观看界面里")
 
     lu.assertTrue(Fk:getCardById(c1.id):getMark("@@j_shichen_chen") > 0, "所选牌应带“谶”标记")
     lu.assertEquals(Fk:getCardById(c2.id):getMark("@@j_shichen_chen"), 0, "未选牌不应带标记")
     lu.assertEquals(me:getMark("j_shichen_chen_name"), "slash", "应记录“谶”的牌名")
     lu.assertEquals(me:getMark("j_shichen_chen_suit"), Card.Spade, "应记录“谶”的花色")
+    lu.assertEquals(me:getMark("j_shichen_chen_id"), c1.id, "应记录“谶”的牌 id")
     lu.assertTrue(me:hasSkill("j_shichen_conv"), "应授予转化技能")
     lu.assertFalse(spec:can_use(me), "出牌阶段限一次")
   end)
@@ -243,12 +292,13 @@ j_shichen:addTest(function(room, me)
     room:setPlayerMark(me, "j_shichen_chen_suit", Card.Spade)
   end)
   FkTest.runInRoom(function()
-    local eff = Fk.skills["j_shichen_conv"]:getSkeleton().effects[1]
-    lu.assertNotNil(eff, "应存在 viewas 效果")
-    lu.assertTrue(eff.cardFilter(me, same.id, {}, {}), "同花色手牌应可选")
-    lu.assertFalse(eff.cardFilter(me, diff.id, {}, {}), "不同花色手牌不可选")
+    -- 注意用冒号调用：cardFilter 是技能实例的方法，点调用会把 player 当成 self 传错
+    local vs = Fk.skills["j_shichen_conv"]
+    lu.assertNotNil(vs, "【谶】应在 Fk.skills 中注册")
+    lu.assertTrue(vs:cardFilter(me, same.id, {}, {}), "同花色手牌应可选")
+    lu.assertFalse(vs:cardFilter(me, diff.id, {}, {}), "不同花色手牌不可选")
 
-    local card = eff:viewAs(me, { same.id })
+    local card = vs:viewAs(me, { same.id })
     lu.assertNotNil(card, "应能转化为“谶”牌")
     lu.assertEquals(card.name, "slash", "转化牌名应为“谶”的牌名")
     lu.assertEquals(#card.subcards, 1, "应以弃置的手牌为副牌")
@@ -312,6 +362,37 @@ j_shichen:addTest(function(room, me)
     lu.assertEquals(#me:getCardIds("h"), hand, "成功使用不应摸牌")
     lu.assertEquals(Fk:getCardById(c1.id):getMark("@@j_shichen_chen"), 0, "使用后“谶”标记应清除")
     lu.assertFalse(me:hasSkill("j_shichen_conv"), "“谶”消失后应收回转化技能")
+  end)
+end)
+
+-- 测试：端到端印牌 —— 弃一张同花色手牌，把“谶”当【无中生有】真正使用出去
+j_shichen:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local chen, same
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_shichen.name)
+    me.phase = Player.Play
+    room.current = me
+    chen = room:printCard("ex_nihilo", Card.Spade, 7)
+    same = room:printCard("jink", Card.Spade, 9)
+    room:obtainCard(me, { same }, true, fk.ReasonDraw, me, "test")
+    room:obtainCard(comp2, { chen }, true, fk.ReasonDraw, me, "test")
+    room:setCardMark(chen, "@@j_shichen_chen", 1)
+    room:setPlayerMark(me, "j_shichen_chen_id", chen.id)
+    room:setPlayerMark(me, "j_shichen_chen_name", "ex_nihilo")
+    room:setPlayerMark(me, "j_shichen_chen_suit", Card.Spade)
+    room:handleAddLoseSkills(me, "j_shichen_conv")
+  end)
+  FkTest.runInRoom(function()
+    lu.assertTrue(me:hasSkill("j_shichen_conv"), "应持有【谶】")
+    local hand = #me:getCardIds("h")
+    room:handleUseCardReply(me, {
+      card = { skill = "j_shichen_conv", subcards = { same.id } },
+      targets = {},
+    })
+    lu.assertFalse(table.contains(me:getCardIds("h"), same.id), "作为副牌的手牌应已使用")
+    lu.assertEquals(#me:getCardIds("h"), hand - 1 + 2, "当【无中生有】使用后应摸两张牌")
+    lu.assertEquals(me:getMark("j_shichen_conv-turn"), 1, "应记录本回合已以此法转化")
   end)
 end)
 
