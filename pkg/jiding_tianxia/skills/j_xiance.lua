@@ -14,20 +14,14 @@ local j_xiance = fk.CreateSkill {
   name = "j_xiance",
 }
 
--- 持有者的子技能：把“谋策”牌当作普通锦囊使用（转化技）
-local j_xiance_holder = fk.CreateSkill {
-  name = "j_xiance_holder",
-}
+-- 持有者的转化子技能 j_xiance_holder 见同目录 j_xiance_holder.lua（必须单独成文件，否则不注册）
+local HOLDER = "j_xiance_holder"
 
 Fk:loadTranslationTable{
   ["j_xiance"] = "献策",
   [":j_xiance"] = "出牌阶段限一次，你可以选择一名角色，交给其一张牌作为“谋策”。持有“谋策”的角色回合内，可以将这张“谋策”当作任意一张普通锦囊牌使用；若其回合内没有使用这张“谋策”，回合结束时，你收回此牌并摸X张牌（X为该角色本回合使用牌的数量）。",
 
-  ["j_xiance_holder"] = "谋策",
-  [":j_xiance_holder"] = "出牌阶段，你可以将一张“谋策”牌当作一张本局已加入游戏的普通锦囊牌使用。",
-
   ["#j_xiance"] = "献策：选择一张手牌与一名角色，交给其作为“谋策”",
-  ["#j_xiance_holder"] = "谋策：选择一张“谋策”牌，当作普通锦囊牌使用",
   ["@@j_xiance_mouli"] = "谋策",
 }
 
@@ -107,10 +101,10 @@ local function syncHolderGrants(room)
 
     if has and not granted then
       room:setPlayerMark(p, NAMES_MARK, inGameCommonTricks(room))
-      room:handleAddLoseSkills(p, j_xiance_holder.name, nil, false, true)
+      room:handleAddLoseSkills(p, HOLDER, nil, false, true)
       room:setPlayerMark(p, GRANTED_MARK, 1)
     elseif (not has) and granted then
-      room:handleAddLoseSkills(p, "-" .. j_xiance_holder.name, nil, false, true)
+      room:handleAddLoseSkills(p, "-" .. HOLDER, nil, false, true)
       room:setPlayerMark(p, GRANTED_MARK, 0)
       room:setPlayerMark(p, NAMES_MARK, {})
     elseif has and granted then
@@ -161,42 +155,7 @@ j_xiance:addEffect("active", {
   end,
 })
 
--- 谋策子技能：出牌阶段，将一张“谋策”牌当作本局已加入游戏的普通锦囊使用
-j_xiance_holder:addEffect("viewas", {
-  anim_type = "offensive",
-  prompt = "#j_xiance_holder",
-  -- 可视为使用任意普通锦囊（子类关键字 normal_trick）；引擎据此判断可转化出什么牌
-  pattern = ".|.|.|.|.|normal_trick",
-  card_num = 1,
-  card_filter = function(self, player, to_select, selected, selected_targets)
-    if #selected >= 1 then return false end
-    return isMouliCard(player, to_select)
-  end,
-  interaction = function(self, player)
-    local names = player:getTableMark(NAMES_MARK)
-    if #names == 0 then return nil end
-    -- 原始牌名交给 CardNameBox，显示由前端翻译，回传的仍是原始牌名
-    return UI.CardNameBox { choices = names, all_choices = names }
-  end,
-  view_as = function(self, player, cards)
-    if #cards ~= 1 then return nil end
-    if not self.interaction.data then return nil end
-    if not isMouliCard(player, cards[1]) then return nil end
-    local name = self.interaction.data
-    if not table.contains(player:getTableMark(NAMES_MARK), name) then return nil end
-    if not Fk.all_card_types[name] then return nil end
-    local card = Fk:cloneCard(name)
-    if card == nil then return nil end
-    card:addSubcard(cards[1])
-    card.skillName = j_xiance_holder.name
-    return card
-  end,
-  enabled_at_play = function(self, player)
-    -- 客户端也会执行此判定，只能读同步到客户端的玩家标记
-    return player.phase == Player.Play and #player:getTableMark(IDS_MARK) > 0
-  end,
-  enabled_at_response = Util.FalseFunc,
-})
+-- 谋策子技能的转化实现见 j_xiance_holder.lua
 
 -- 牌进出角色手牌区 / 谋策牌进入弃牌堆时同步
 j_xiance:addEffect(fk.AfterCardsMove, {
@@ -303,71 +262,57 @@ j_xiance:addTest(function(room, me)
   end)
 end)
 
--- 测试：谋策牌能被转化为普通锦囊（印牌核心）
+-- （谋策本身的选牌/转化单测见 j_xiance_holder.lua，此处只测献策与其联动）
+
+-- 测试：客户端能看到【谋策】按钮与牌名框，且服务端能真正把谋策牌当锦囊用出去
 j_xiance:addTest(function(room, me)
   local c1
   FkTest.runInRoom(function()
     room:handleAddLoseSkills(me, j_xiance.name)
+    room.current = me
+    me.phase = Player.Play
     c1 = room:printCard("jink", Card.Heart, 3)
     room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
-    -- 模拟真实流程：打上谋策标记后同步状态（授予技能 + 两张表标记）
-    room:setCardMark(Fk:getCardById(c1.id), "@@j_xiance_mouli", 1)
-    room:setCardMark(Fk:getCardById(c1.id), "j_xiance_owner", me.id)
     local trick = room:printCard("ex_nihilo", Card.Heart, 5)
     table.insert(room.draw_pile, 1, trick.id)
-    -- 触发一次移牌事件，让状态同步（真实流程中由献策交付那一刻自动触发）
-    local dummy = room:printCard("jink", Card.Spade, 2)
-    room:moveCards{ ids = { dummy.id }, toArea = Card.DiscardPile, moveReason = fk.ReasonDiscard }
   end)
+  -- 走真实的献策 on_use，把谋策交给自己（桓范收回后自己也能用）
   FkTest.runInRoom(function()
-    lu.assertTrue(me:hasSkill("j_xiance_holder"), "持有谋策应获得谋策技能")
-    local skel = Fk.skills[j_xiance_holder.name]:getSkeleton()
-    local eff
-    for _, e in ipairs(skel.effects) do
-      if e.viewAs then eff = e break end
+    local spec
+    for _, sp in ipairs(Fk.skills[j_xiance.name]:getSkeleton().effect_spec_list) do
+      if sp[1] == "active" then spec = sp[3] break end
     end
-    lu.assertNotNil(eff, "谋策应存在 viewas 效果")
-    lu.assertTrue(eff:cardFilter(me, c1.id, {}, {}), "谋策牌应可被选为转化底牌")
-
-    eff.interaction = { data = "ex_nihilo" }
-    local card = eff:viewAs(me, { c1.id })
-    lu.assertNotNil(card, "谋策牌应能转化为普通锦囊")
-    lu.assertEquals(card.name, "ex_nihilo", "转化牌名应为所选锦囊")
-    lu.assertEquals(card.skillName, "j_xiance_holder", "转化牌技能名应为谋策")
-    lu.assertTrue(table.contains(card.subcards, c1.id), "应以谋策牌为副牌")
-
-    -- 不在候选牌名表里的牌名不允许印
-    eff.interaction = { data = "lightning" }
-    lu.assertNil(eff:viewAs(me, { c1.id }), "不可印出本局未加入游戏的牌")
-  end)
-end)
-
--- 测试：普通手牌不能被谋策技能选中（防止误用）
-j_xiance:addTest(function(room, me)
-  local c1, c2
-  FkTest.runInRoom(function()
-    room:handleAddLoseSkills(me, j_xiance.name)
-    me.phase = Player.Play
-    room.current = me
-    c1 = room:printCard("jink", Card.Heart, 3)
-    c2 = room:printCard("slash", Card.Club, 9)
-    room:obtainCard(me, { c1, c2 }, true, fk.ReasonDraw, me, "test")
-    room:setCardMark(Fk:getCardById(c1.id), "@@j_xiance_mouli", 1)
-    room:setPlayerMark(me, "j_xiance_mouli_ids", { c1.id })
-    room:setPlayerMark(me, "j_xiance_names", { "ex_nihilo" })
+    spec:on_use(room, { from = me, tos = { me }, cards = { c1.id } })
   end)
   FkTest.runInRoom(function()
-    local skel = Fk.skills[j_xiance_holder.name]:getSkeleton()
-    local eff
-    for _, e in ipairs(skel.effects) do
-      if e.viewAs then eff = e break end
-    end
-    lu.assertTrue(eff:cardFilter(me, c1.id, {}, {}), "带谋策标记的牌应可选")
-    lu.assertFalse(eff:cardFilter(me, c2.id, {}, {}), "普通手牌不可选")
-
-    -- view_as 也要挡住非谋策牌
-    eff.interaction = { data = "ex_nihilo" }
-    lu.assertNil(eff:viewAs(me, { c2.id }), "普通手牌不能转化")
+    lu.assertTrue(me:hasSkill(HOLDER), "交付谋策后应获得谋策技能")
+    lu.assertTrue(#me:getTableMark("j_xiance_names") > 0, "服务端应写入候选牌名")
+  end)
+  -- 客户端视角：按钮可点、牌名框有候选、能生成虚拟牌（这一层此前完全没被验证过）
+  FkTest.runInClient(function()
+    local vs = Fk.skills[HOLDER]
+    lu.assertTrue(Self:hasSkill(HOLDER), "客户端应看到谋策技能")
+    lu.assertTrue(vs:enabledAtPlay(Self), "客户端【谋策】按钮应可用")
+    local inter = vs.interaction(vs, Self)
+    lu.assertNotNil(inter, "客户端应能取到牌名选择框")
+    lu.assertEquals(inter.type, "cardname", "应为牌名选择框")
+    lu.assertTrue(#inter.choices > 0, "候选牌名不应为空")
+    lu.assertTrue(vs:cardFilter(Self, c1.id, {}, {}), "客户端谋策牌应可选中")
+    vs.interaction.data = inter.choices[1]
+    local card = vs:viewAs(Self, { c1.id })
+    lu.assertNotNil(card, "客户端应能生成虚拟锦囊牌")
+    lu.assertEquals(card.skillName, HOLDER, "虚拟牌应记谋策技能名")
+  end)
+  -- 服务端视角：走真实的回复处理，把谋策当【无中生有】用出去
+  FkTest.runInRoom(function()
+    local hand = #me:getCardIds("h")
+    room:handleUseCardReply(me, {
+      card = { skill = HOLDER, subcards = { c1.id }, interaction_data = "ex_nihilo" },
+      targets = {},
+    })
+    -- 谋策牌（c1）离手进入处理区/弃牌堆，同时【无中生有】摸两张 → 净 +1
+    lu.assertEquals(#me:getCardIds("h"), hand - 1 + 2, "谋策当【无中生有】使用后应摸两张牌")
+    lu.assertFalse(table.contains(me:getCardIds("h"), c1.id), "谋策牌应已离开手牌")
   end)
 end)
 
@@ -413,7 +358,7 @@ j_xiance:addTest(function(room, me)
     room:setCardMark(Fk:getCardById(c1.id), "@@j_xiance_mouli", 1)
     room:setCardMark(Fk:getCardById(c1.id), "j_xiance_owner", me.id)
     room:moveCardTo(c1.id, Card.PlayerHand, comp2, fk.ReasonGive, j_xiance.name, nil, true, me)
-    room:moveCardTo(c1.id, Card.DiscardPile, nil, fk.ReasonUse, j_xiance_holder.name)
+    room:moveCardTo(c1.id, Card.DiscardPile, nil, fk.ReasonUse, HOLDER)
   end)
   FkTest.runInRoom(function()
     lu.assertEquals(Fk:getCardById(c1.id):getMark("@@j_xiance_mouli"), 0, "进入弃牌堆后谋策标记应销毁")

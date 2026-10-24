@@ -8,20 +8,17 @@ local j_shichen = fk.CreateSkill {
 }
 
 -- 转化子技能：弃一张与“谶”同花色的手牌，视为使用“谶”牌（授予给“谶”的持有者杨修）
-local j_shichen_conv = fk.CreateSkill {
-  name = "j_shichen_conv",
-}
+-- ！！转化实现必须单独占一个文件（j_shichen_conv.lua）！！
+-- 引擎的技能加载器只注册「文件 return 的那个 skeleton」，同一文件里第二个 fk.CreateSkill
+-- 不会进入 Fk.skills，handleAddLoseSkills 会静默失败、技能根本授予不上。
+local CONV = "j_shichen_conv"
 
 Fk:loadTranslationTable{
   ["j_shichen"] = "识谶",
   [":j_shichen"] = "出牌阶段限一次，你可以观看一名角色的手牌，选择其中一张牌标记为“谶”。本轮内，你可以弃置一张与“谶”花色相同的手牌，视为使用该“谶”牌；若你一回合未以此法发动转化，回合结束时你摸一张牌（每名角色回合限一次）。当标记为“谶”的牌进入弃牌堆时，你视为使用该“谶”牌；若你无法使用此牌，则改为摸两张牌。",
 
-  ["j_shichen_conv"] = "谶",
-  [":j_shichen_conv"] = "本轮内，你可以弃置一张与“谶”花色相同的手牌，视为使用该“谶”牌。",
-
   ["#j_shichen"] = "识谶：观看一名角色的手牌，标记其中一张为“谶”",
   ["#j_shichen-mark"] = "识谶：请选择其中一张牌标记为“谶”",
-  ["#j_shichen_conv"] = "谶：弃置一张与“谶”花色相同的手牌，视为使用“谶”牌",
   ["#j_shichen-use"] = "识谶：视为使用此“谶”牌（若无法使用则改为摸两张牌）",
 
   ["@@j_shichen_chen"] = "谶",
@@ -34,32 +31,14 @@ local function chenName(player)
   return name
 end
 
-local function chenSuit(player)
-  local suit = player:getMark("j_shichen_chen_suit")
-  if type(suit) ~= "number" or suit < 1 then return end
-  return suit
-end
-
--- 手中与“谶”同花色的牌
-local function sameSuitHandIds(player)
-  local suit = chenSuit(player)
-  if suit == nil then return {} end
-  local ids = {}
-  for _, cid in ipairs(player:getCardIds("h")) do
-    local card = Fk:getCardById(cid)
-    if card and card.suit == suit then table.insert(ids, cid) end
-  end
-  return ids
-end
-
 -- 授予 / 收回转化子技能
 local function grantConv(room, player, on)
   local granted = player:getMark("j_shichen_granted") > 0
   if on and not granted then
-    room:handleAddLoseSkills(player, j_shichen_conv.name, nil, false, true)
+    room:handleAddLoseSkills(player, CONV, nil, false, true)
     room:setPlayerMark(player, "j_shichen_granted", 1)
   elseif (not on) and granted then
-    room:handleAddLoseSkills(player, "-" .. j_shichen_conv.name, nil, false, true)
+    room:handleAddLoseSkills(player, "-" .. CONV, nil, false, true)
     room:setPlayerMark(player, "j_shichen_granted", 0)
   end
 end
@@ -67,7 +46,8 @@ end
 -- 清除“谶”（清牌上标记 + 玩家记录 + 收回转化技能）
 local function clearChen(room, player)
   local cid = player:getMark("j_shichen_chen_id")
-  if type(cid) == "number" and cid > 0 then
+  -- 注意：printCard 生成的牌 id 为负数，不能写 cid > 0
+  if type(cid) == "number" and cid ~= 0 then
     local card = Fk:getCardById(cid)
     if card then room:setCardMark(card, "@@j_shichen_chen", 0) end
   end
@@ -115,7 +95,8 @@ j_shichen:addEffect("active", {
       skill_name = j_shichen.name,
       prompt = "#j_shichen-mark",
     })
-    if not pick or pick <= 0 then return end
+    -- 注意：printCard 生成的牌 id 为负数，只能把 nil / 0 视为未选
+    if pick == nil or pick == 0 then return end
     local card = Fk:getCardById(pick)
     if not card then return end
     room:setPlayerMark(player, "j_shichen_used-phase", 1)
@@ -124,37 +105,7 @@ j_shichen:addEffect("active", {
 })
 
 -- 本轮内：弃一张同花色手牌，视为使用“谶”牌
-j_shichen_conv:addEffect("viewas", {
-  prompt = "#j_shichen_conv",
-  pattern = ".",
-  handly_pile = true,
-  card_filter = function(self, player, to_select, selected)
-    if #selected >= 1 then return false end
-    if not table.contains(player:getCardIds("h"), to_select) then return false end
-    local suit = chenSuit(player)
-    return suit ~= nil and Fk:getCardById(to_select).suit == suit
-  end,
-  view_as = function(self, player, cards)
-    if #cards ~= 1 then return nil end
-    local name = chenName(player)
-    if not name then return nil end
-    local card = Fk:cloneCard(name)
-    if not card then return nil end
-    card:addSubcards(cards)
-    card.skillName = j_shichen_conv.name
-    return card
-  end,
-  enabled_at_play = function(self, player)
-    return chenName(player) ~= nil and #sameSuitHandIds(player) > 0
-  end,
-  enabled_at_response = function(self, player)
-    return chenName(player) ~= nil and #sameSuitHandIds(player) > 0
-  end,
-  before_use = function(self, player, use)
-    -- 记录本回合已以此法转化（回合结束时若未转化则摸一张）
-    player.room:setPlayerMark(player, "j_shichen_conv-turn", 1)
-  end,
-})
+-- 转化效果本体在 j_shichen_conv.lua（必须单独成文件，见文件头说明）
 
 -- 若你一回合未以此法发动转化，回合结束时你摸一张牌
 j_shichen:addEffect(fk.TurnEnd, {

@@ -11,10 +11,10 @@ local j_yangxiu_xianji = fk.CreateSkill {
 }
 
 -- 自带【狂骨】副本（避免跨包依赖）
-local j_kuanggu = fk.CreateSkill {
-  name = "j_kuanggu",
-  tags = { Skill.Compulsory },
-}
+-- ！！副本实现必须单独占一个文件（j_kuanggu.lua）！！
+-- 引擎的技能加载器只注册「文件 return 的那个 skeleton」，同一文件里第二个 fk.CreateSkill
+-- 不会进入 Fk.skills，handleAddLoseSkills 会静默失败、技能根本授予不上。
+local KUANGGU = "j_kuanggu"
 
 Fk:loadTranslationTable{
   ["j_yangxiu_xianji"] = "显忌",
@@ -24,9 +24,6 @@ Fk:loadTranslationTable{
   ["#j_yangxiu_xianji-choice"] = "显忌：请选择一项",
   ["j_yangxiu_xianji_opt1"] = "令其摸体力上限张牌、体力回复至1点，其下回合获得【咆哮】【狂骨】，该回合结束时失去所有体力",
   ["j_yangxiu_xianji_opt2"] = "令其将体力回复至上限并获得技能【空城】",
-
-  ["j_kuanggu"] = "狂骨",
-  [":j_kuanggu"] = "锁定技，当你对距离1以内的一名角色造成伤害后，你回复等量体力。",
 }
 
 -- 选项1：摸体力上限张牌、回复至1点、获得防伤与狂暴标记
@@ -102,6 +99,8 @@ j_yangxiu_xianji:addEffect(fk.DamageInflicted, {
   can_trigger = function(self, event, target, player, data)
     return target == player and not player.dead and player:getMark("j_yangxiu_xianji_protect") > 0
   end,
+  -- 技能文本无“可以”，自动发动
+  on_cost = function() return true end,
   on_use = function(self, event, target, player, data)
     data:preventDamage()
   end,
@@ -117,7 +116,7 @@ j_yangxiu_xianji:addEffect(fk.TurnStart, {
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room
-    room:handleAddLoseSkills(player, "paoxiao|" .. j_kuanggu.name, nil, false, true)
+    room:handleAddLoseSkills(player, "paoxiao|" .. KUANGGU, nil, false, true)
     room:setPlayerMark(player, "j_yangxiu_xianji_berserk_on", 1)
   end,
 })
@@ -135,7 +134,7 @@ j_yangxiu_xianji:addEffect(fk.TurnEnd, {
     room:setPlayerMark(player, "j_yangxiu_xianji_berserk", 0)
     room:setPlayerMark(player, "j_yangxiu_xianji_berserk_on", 0)
     room:setPlayerMark(player, "j_yangxiu_xianji_protect", 0)
-    room:handleAddLoseSkills(player, "-paoxiao|-" .. j_kuanggu.name, nil, false, true)
+    room:handleAddLoseSkills(player, "-paoxiao|-" .. KUANGGU, nil, false, true)
     -- 失去所有体力（流失体力，很可能进入濒死）
     if not player.dead and player.hp > 0 then
       room:loseHp(player, player.hp, j_yangxiu_xianji.name)
@@ -143,26 +142,7 @@ j_yangxiu_xianji:addEffect(fk.TurnEnd, {
   end,
 })
 
--- 狂骨（副本）：锁定技，你对距离1以内的角色造成伤害后回复等量体力
-j_kuanggu:addEffect(fk.Damage, {
-  anim_type = "support",
-  can_trigger = function(self, event, target, player, data)
-    return target == player and player:hasSkill(j_kuanggu.name) and not player.dead
-      and data.to ~= player and data.to ~= nil and player:isWounded()
-      and player:distanceTo(data.to) <= 1
-  end,
-  trigger_times = function(self, event, target, player, data)
-    return data.damage
-  end,
-  on_use = function(self, event, target, player, data)
-    player.room:recover{
-      who = player,
-      num = 1,
-      recoverBy = player,
-      skillName = j_kuanggu.name,
-    }
-  end,
-})
+-- 狂骨（副本）：实现见 j_kuanggu.lua（必须单独成文件，见上方说明）
 
 -- 测试：濒死无来源 → 默认选项1（摸X张、回复至1、防伤、下回合获咆哮狂骨、回合末失去所有体力）
 j_yangxiu_xianji:addTest(function(room, me)
@@ -252,17 +232,6 @@ j_yangxiu_xianji:addTest(function(room, me)
   end)
 end)
 
--- 测试：狂骨——对距离1以内角色造成伤害后回复等量体力
-j_kuanggu:addTest(function(room, me)
-  FkTest.runInRoom(function()
-    room:handleAddLoseSkills(me, j_kuanggu.name)
-    room:loseHp(me, 2)
-  end)
-  FkTest.runInRoom(function()
-    local before = me.hp
-    room:damage{ from = me, to = room.players[2], damage = 1 }
-    lu.assertEquals(me.hp, before + 1, "对距离1以内角色造成伤害应回复1点体力")
-  end)
-end)
+-- 测试：狂骨——对距离1以内角色造成伤害后回复等量体力（见 j_kuanggu.lua）
 
 return j_yangxiu_xianji
