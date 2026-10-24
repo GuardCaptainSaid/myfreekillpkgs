@@ -168,7 +168,7 @@ Fk:loadTranslationTable{
   ["~ji_huanfan"] = "竖子不足与谋……智士之悲，莫过于此……",
 }
 
-General:new(extension, "ji_yangxiu", "wei", 3, 4):addSkills { "j_shichen", "j_xianji" }
+General:new(extension, "ji_yangxiu", "wei", 3, 4):addSkills { "j_shichen", "j_yangxiu_xianji" }
 Fk:loadTranslationTable{
   ["ji_yangxiu"] = "计杨修",
   ["#ji_yangxiu"] = "恃才放旷",
