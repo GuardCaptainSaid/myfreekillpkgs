@@ -7,34 +7,85 @@ local j_shichen = fk.CreateSkill {
   name = "j_shichen",
 }
 
+-- 转化子技能：弃一张与“谶”同花色的手牌，视为使用“谶”牌（授予给“谶”的持有者杨修）
+local j_shichen_conv = fk.CreateSkill {
+  name = "j_shichen_conv",
+}
+
 Fk:loadTranslationTable{
   ["j_shichen"] = "识谶",
   [":j_shichen"] = "出牌阶段限一次，你可以观看一名角色的手牌，选择其中一张牌标记为“谶”。本轮内，你可以弃置一张与“谶”花色相同的手牌，视为使用该“谶”牌；若你一回合未以此法发动转化，回合结束时你摸一张牌（每名角色回合限一次）。当标记为“谶”的牌进入弃牌堆时，你视为使用该“谶”牌；若你无法使用此牌，则改为摸两张牌。",
 
+  ["j_shichen_conv"] = "谶",
+  [":j_shichen_conv"] = "本轮内，你可以弃置一张与“谶”花色相同的手牌，视为使用该“谶”牌。",
+
   ["#j_shichen"] = "识谶：观看一名角色的手牌，标记其中一张为“谶”",
   ["#j_shichen-mark"] = "识谶：请选择其中一张牌标记为“谶”",
-  ["#j_shichen-invoke"] = "识谶：是否弃置一张与“谶”花色相同的手牌，视为使用“谶”？",
-  ["#j_shichen-discard"] = "识谶：请弃置一张与“谶”花色相同的手牌",
-  ["#j_shichen-use"] = "识谶：视为使用“谶”（若无法使用则改为摸两张牌）",
-  ["j_shichen_cand"] = "手牌",
+  ["#j_shichen_conv"] = "谶：弃置一张与“谶”花色相同的手牌，视为使用“谶”牌",
+  ["#j_shichen-use"] = "识谶：视为使用此“谶”牌（若无法使用则改为摸两张牌）",
+
   ["@@j_shichen_chen"] = "谶",
 }
 
--- 查找当前带“谶”标记的牌（全场各区域）
-local function findChenCard(room)
-  local function try(ids)
-    for _, id in ipairs(ids) do
-      local c = Fk:getCardById(id)
-      if c and c:getMark("@@j_shichen_chen") > 0 then return c end
-    end
+-- 当前“谶”的牌名与花色（玩家 mark，服务端权威；客户端 viewas 也读这两个标记）
+local function chenName(player)
+  local name = player:getMark("j_shichen_chen_name")
+  if type(name) ~= "string" or name == "" or Fk.all_card_types[name] == nil then return end
+  return name
+end
+
+local function chenSuit(player)
+  local suit = player:getMark("j_shichen_chen_suit")
+  if type(suit) ~= "number" or suit < 1 then return end
+  return suit
+end
+
+-- 手中与“谶”同花色的牌
+local function sameSuitHandIds(player)
+  local suit = chenSuit(player)
+  if suit == nil then return {} end
+  local ids = {}
+  for _, cid in ipairs(player:getCardIds("h")) do
+    local card = Fk:getCardById(cid)
+    if card and card.suit == suit then table.insert(ids, cid) end
   end
-  local c = try(room.draw_pile) or try(room.discard_pile) or try(room.processing_area)
-  if c then return c end
-  for _, p in ipairs(room.players) do
-    c = try(p:getCardIds("hej"))
-    if c then return c end
+  return ids
+end
+
+-- 授予 / 收回转化子技能
+local function grantConv(room, player, on)
+  local granted = player:getMark("j_shichen_granted") > 0
+  if on and not granted then
+    room:handleAddLoseSkills(player, j_shichen_conv.name, nil, false, true)
+    room:setPlayerMark(player, "j_shichen_granted", 1)
+  elseif (not on) and granted then
+    room:handleAddLoseSkills(player, "-" .. j_shichen_conv.name, nil, false, true)
+    room:setPlayerMark(player, "j_shichen_granted", 0)
   end
-  return nil
+end
+
+-- 清除“谶”（清牌上标记 + 玩家记录 + 收回转化技能）
+local function clearChen(room, player)
+  local cid = player:getMark("j_shichen_chen_id")
+  if type(cid) == "number" and cid > 0 then
+    local card = Fk:getCardById(cid)
+    if card then room:setCardMark(card, "@@j_shichen_chen", 0) end
+  end
+  room:setPlayerMark(player, "j_shichen_chen_id", 0)
+  room:setPlayerMark(player, "j_shichen_chen_name", "")
+  room:setPlayerMark(player, "j_shichen_chen_suit", -1)
+  grantConv(room, player, false)
+end
+
+-- 标记一张牌为“谶”
+local function setChen(room, player, card)
+  clearChen(room, player)
+  room:setCardMark(card, "@@j_shichen_chen", 1)
+  room:setPlayerMark(player, "j_shichen_chen_id", card.id)
+  room:setPlayerMark(player, "j_shichen_chen_name",
+    (card.trueName and card.trueName ~= "") and card.trueName or card.name)
+  room:setPlayerMark(player, "j_shichen_chen_suit", card.suit)
+  grantConv(room, player, true)
 end
 
 -- 出牌阶段限一次：观看一名角色的手牌，标记其中一张为“谶”
@@ -44,11 +95,10 @@ j_shichen:addEffect("active", {
   target_num = 1,
   can_use = function(self, player)
     if player.phase ~= Player.Play then return false end
-    return player:usedSkillTimes(j_shichen.name, Player.HistoryPhase) == 0
+    return player:getMark("j_shichen_used-phase") == 0
   end,
   target_filter = function(self, player, to_select, selected)
-    return #selected == 0 and to_select ~= player and not to_select.dead
-      and #to_select:getCardIds("h") > 0
+    return #selected == 0 and not to_select.dead and #to_select:getCardIds("h") > 0
   end,
   -- 注意：feasible 参数顺序为 (player, selected_targets, selected_cards)
   feasible = function(self, player, selected_targets, selected_cards)
@@ -57,8 +107,8 @@ j_shichen:addEffect("active", {
   on_use = function(self, room, effect)
     local player = effect.from
     local target = effect.tos and effect.tos[1]
-    if not target or target.dead then return end
-    room:showCards(target:getCardIds("h"), player, j_shichen.name)
+    if not target or target.dead or #target:getCardIds("h") == 0 then return end
+    -- 观看（仅自己可见）
     local pick = room:askToChooseCard(player, {
       target = target,
       flag = "h",
@@ -66,64 +116,47 @@ j_shichen:addEffect("active", {
       prompt = "#j_shichen-mark",
     })
     if not pick or pick <= 0 then return end
-    room:setCardMark(Fk:getCardById(pick), "@@j_shichen_chen", 1)
+    local card = Fk:getCardById(pick)
+    if not card then return end
+    room:setPlayerMark(player, "j_shichen_used-phase", 1)
+    setChen(room, player, card)
   end,
 })
 
--- 本轮内（每回合开始时询问）：弃置一张与“谶”花色相同的手牌，视为使用该“谶”牌
-j_shichen:addEffect(fk.TurnStart, {
-  global = true,
-  anim_type = "control",
-  can_trigger = function(self, event, target, player, data)
-    if not player:hasSkill(j_shichen.name) or player.dead then return false end
-    -- 每名角色回合限一次
-    if player:getMark("j_shichen_conv-turn") > 0 then return false end
-    local chen = findChenCard(player.room)
-    if not chen then return false end
-    for _, cid in ipairs(player:getCardIds("h")) do
-      if Fk:getCardById(cid).suit == chen.suit then return true end
-    end
-    return false
+-- 本轮内：弃一张同花色手牌，视为使用“谶”牌
+j_shichen_conv:addEffect("viewas", {
+  prompt = "#j_shichen_conv",
+  pattern = ".",
+  handly_pile = true,
+  card_filter = function(self, player, to_select, selected)
+    if #selected >= 1 then return false end
+    if not table.contains(player:getCardIds("h"), to_select) then return false end
+    local suit = chenSuit(player)
+    return suit ~= nil and Fk:getCardById(to_select).suit == suit
   end,
-  on_cost = function(self, event, target, player, data)
-    return player.room:askToSkillInvoke(player, {
-      skill_name = j_shichen.name,
-      prompt = "#j_shichen-invoke",
-    })
+  view_as = function(self, player, cards)
+    if #cards ~= 1 then return nil end
+    local name = chenName(player)
+    if not name then return nil end
+    local card = Fk:cloneCard(name)
+    if not card then return nil end
+    card:addSubcards(cards)
+    card.skillName = j_shichen_conv.name
+    return card
   end,
-  on_use = function(self, event, target, player, data)
-    local room = player.room
-    local chen = findChenCard(room)
-    if not chen then return end
-    local candidates = table.filter(player:getCardIds("h"), function(cid)
-      return Fk:getCardById(cid).suit == chen.suit
-    end)
-    if #candidates == 0 then return end
-    local pick = room:askToChooseCards(player, {
-      target = player,
-      flag = { card_data = { { "j_shichen_cand", candidates } } },
-      min = 1,
-      max = 1,
-      cancelable = true,
-      skill_name = j_shichen.name,
-      prompt = "#j_shichen-discard",
-    })
-    if not pick or #pick == 0 then return end
-    -- 弃置的手牌作为转化牌的副牌，使用后进入弃牌堆（同“典律”的处理）
-    local use = room:askToUseVirtualCard(player, {
-      name = chen.trueName,
-      subcards = { pick[1] },
-      skill_name = j_shichen.name,
-      cancelable = true,
-      prompt = "#j_shichen-use",
-    })
-    if use then
-      room:setPlayerMark(player, "j_shichen_conv-turn", 1)
-    end
+  enabled_at_play = function(self, player)
+    return chenName(player) ~= nil and #sameSuitHandIds(player) > 0
+  end,
+  enabled_at_response = function(self, player)
+    return chenName(player) ~= nil and #sameSuitHandIds(player) > 0
+  end,
+  before_use = function(self, player, use)
+    -- 记录本回合已以此法转化（回合结束时若未转化则摸一张）
+    player.room:setPlayerMark(player, "j_shichen_conv-turn", 1)
   end,
 })
 
--- 若你一回合未以此法发动转化，回合结束时你摸一张牌（自动执行）
+-- 若你一回合未以此法发动转化，回合结束时你摸一张牌
 j_shichen:addEffect(fk.TurnEnd, {
   global = true,
   anim_type = "drawcard",
@@ -132,7 +165,7 @@ j_shichen:addEffect(fk.TurnEnd, {
   can_trigger = function(self, event, target, player, data)
     if not player:hasSkill(j_shichen.name) or player.dead then return false end
     if player:getMark("j_shichen_conv-turn") > 0 then return false end
-    return findChenCard(player.room) ~= nil
+    return chenName(player) ~= nil
   end,
   on_use = function(self, event, target, player, data)
     player.room:drawCards(player, 1, j_shichen.name)
@@ -143,13 +176,14 @@ j_shichen:addEffect(fk.TurnEnd, {
 j_shichen:addEffect(fk.AfterCardsMove, {
   global = true,
   anim_type = "control",
+  on_cost = function() return true end,
   can_trigger = function(self, event, target, player, data)
     if not player:hasSkill(j_shichen.name) or player.dead then return false end
     for _, move in ipairs(data) do
       if move.toArea == Card.DiscardPile then
         for _, info in ipairs(move.moveInfo or {}) do
-          local c = Fk:getCardById(info.cardId)
-          if c and c:getMark("@@j_shichen_chen") > 0 then return true end
+          local card = Fk:getCardById(info.cardId)
+          if card and card:getMark("@@j_shichen_chen") > 0 then return true end
         end
       end
     end
@@ -160,17 +194,27 @@ j_shichen:addEffect(fk.AfterCardsMove, {
     for _, move in ipairs(data) do
       if move.toArea == Card.DiscardPile then
         for _, info in ipairs(move.moveInfo or {}) do
-          local c = Fk:getCardById(info.cardId)
-          if c and c:getMark("@@j_shichen_chen") > 0 then
-            -- “谶”已被消耗，先清除标记（防止再次进入弃牌堆时重复触发）
-            room:setCardMark(c, "@@j_shichen_chen", 0)
-            local use = room:askToUseVirtualCard(player, {
-              name = c.trueName,
-              skill_name = j_shichen.name,
-              cancelable = true,
-              prompt = "#j_shichen-use",
-            })
-            if not use and not player.dead then
+          local card = Fk:getCardById(info.cardId)
+          if card and card:getMark("@@j_shichen_chen") > 0 then
+            -- 该牌已进入弃牌堆，“谶”随之中断
+            local name = (card.trueName and card.trueName ~= "") and card.trueName or card.name
+            clearChen(room, player)
+            if player.dead then return end
+            -- 先判断能否使用，再决定“视为使用”还是摸两张
+            local usable = false
+            local proto = Fk:cloneCard(name)
+            if proto then
+              proto.skillName = j_shichen.name
+              usable = #proto:getAvailableTargets(player, { bypass_times = true, extraUse = true }) > 0
+            end
+            if usable then
+              room:askToUseVirtualCard(player, {
+                name = name,
+                skill_name = j_shichen.name,
+                cancelable = true,
+                prompt = "#j_shichen-use",
+              })
+            else
               room:drawCards(player, 2, j_shichen.name)
             end
           end
@@ -180,23 +224,19 @@ j_shichen:addEffect(fk.AfterCardsMove, {
   end,
 })
 
--- 新的一轮开始时，清除上一轮遗留的“谶”标记
-j_shichen:addEffect(fk.RoundStart, {
+-- 本轮结束时清除“谶”
+j_shichen:addEffect(fk.RoundEnd, {
   global = true,
   on_cost = function() return true end,
   can_trigger = function(self, event, target, player, data)
     return player:hasSkill(j_shichen.name) and not player.dead
   end,
   on_use = function(self, event, target, player, data)
-    local room = player.room
-    local c = findChenCard(room)
-    if c then
-      room:setCardMark(c, "@@j_shichen_chen", 0)
-    end
+    clearChen(player.room, player)
   end,
 })
 
--- 测试：出牌阶段标记“谶” → 手牌中的牌获得标记
+-- 测试：出牌阶段标记“谶” → 记录牌名/花色并授予转化技能
 j_shichen:addTest(function(room, me)
   local comp2 = room.players[2]
   local c1, c2
@@ -220,78 +260,74 @@ j_shichen:addTest(function(room, me)
       if sp[1] == "active" then spec = sp[3] break end
     end
     lu.assertNotNil(spec, "应存在 active 效果")
+    lu.assertTrue(spec:can_use(me), "出牌阶段且未发动过应可发动")
     spec:on_use(room, { from = me, tos = { comp2 }, cards = {} })
     room.askToChooseCard = origChooseCard
 
     lu.assertTrue(Fk:getCardById(c1.id):getMark("@@j_shichen_chen") > 0, "所选牌应带“谶”标记")
     lu.assertEquals(Fk:getCardById(c2.id):getMark("@@j_shichen_chen"), 0, "未选牌不应带标记")
+    lu.assertEquals(me:getMark("j_shichen_chen_name"), "slash", "应记录“谶”的牌名")
+    lu.assertEquals(me:getMark("j_shichen_chen_suit"), Card.Spade, "应记录“谶”的花色")
+    lu.assertTrue(me:hasSkill("j_shichen_conv"), "应授予转化技能")
+    lu.assertFalse(spec:can_use(me), "出牌阶段限一次")
   end)
 end)
 
--- 测试：回合开始转化（弃同花色手牌视为使用“谶”）→ 回合结束不摸牌
+-- 测试：转化 —— 弃同花色手牌视为使用“谶”；不同花色不可选
 j_shichen:addTest(function(room, me)
   local comp2 = room.players[2]
-  local c1, c2
+  local chen, same, diff
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_shichen.name)
+    me.phase = Player.Play
+    room.current = me
+    chen = room:printCard("slash", Card.Spade, 7)
+    same = room:printCard("jink", Card.Spade, 9)
+    diff = room:printCard("peach", Card.Heart, 6)
+    room:obtainCard(comp2, { chen }, true, fk.ReasonDraw, me, "test")
+    room:obtainCard(me, { same, diff }, true, fk.ReasonDraw, me, "test")
+    room:setCardMark(chen, "@@j_shichen_chen", 1)
+    room:setPlayerMark(me, "j_shichen_chen_id", chen.id)
+    room:setPlayerMark(me, "j_shichen_chen_name", "slash")
+    room:setPlayerMark(me, "j_shichen_chen_suit", Card.Spade)
+  end)
+  FkTest.runInRoom(function()
+    local eff = Fk.skills["j_shichen_conv"]:getSkeleton().effects[1]
+    lu.assertNotNil(eff, "应存在 viewas 效果")
+    lu.assertTrue(eff.cardFilter(me, same.id, {}, {}), "同花色手牌应可选")
+    lu.assertFalse(eff.cardFilter(me, diff.id, {}, {}), "不同花色手牌不可选")
+
+    local card = eff:viewAs(me, { same.id })
+    lu.assertNotNil(card, "应能转化为“谶”牌")
+    lu.assertEquals(card.name, "slash", "转化牌名应为“谶”的牌名")
+    lu.assertEquals(#card.subcards, 1, "应以弃置的手牌为副牌")
+  end)
+end)
+
+-- 测试：一回合未转化 → 回合结束摸一张牌；已转化则不摸
+j_shichen:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local chen
   FkTest.runInRoom(function()
     room:handleAddLoseSkills(me, j_shichen.name)
     room.current = comp2
     comp2.phase = Player.Play
-    c1 = room:printCard("slash", Card.Spade, 7)   -- 谶：黑桃
-    c2 = room:printCard("slash", Card.Spade, 9)   -- 同花色手牌
-    room:obtainCard(comp2, { c1 }, true, fk.ReasonDraw, me, "test")
-    room:obtainCard(me, { c2 }, true, fk.ReasonDraw, me, "test")
-    room:setCardMark(c1, "@@j_shichen_chen", 1)
-  end)
-  FkTest.runInRoom(function()
-    local origInvoke = room.askToSkillInvoke
-    local origChooseCards = room.askToChooseCards
-    local origUseVirtual = room.askToUseVirtualCard
-    room.askToSkillInvoke = function(self, who, params)
-      if who == me then return true end
-      return origInvoke(self, who, params)
-    end
-    room.askToChooseCards = function(self, who, params)
-      if who == me then return { c2.id } end
-      return origChooseCards(self, who, params)
-    end
-    local usedNames = {}
-    room.askToUseVirtualCard = function(self, who, params)
-      if who == me then
-        table.insert(usedNames, type(params.name) == "table" and params.name[1] or params.name)
-        return true
-      end
-      return origUseVirtual(self, who, params)
-    end
-
-    room.logic:trigger(fk.TurnStart, comp2, {})
-    room.logic:trigger(fk.TurnEnd, comp2, {})
-
-    room.askToSkillInvoke = origInvoke
-    room.askToChooseCards = origChooseCards
-    room.askToUseVirtualCard = origUseVirtual
-
-    lu.assertTrue(table.contains(usedNames, "slash"), "应视为使用“谶”（杀）")
-    lu.assertFalse(table.contains(me:getCardIds("h"), c2.id), "同花色手牌应被弃置")
-    lu.assertTrue(me:getMark("j_shichen_conv-turn") > 0, "应记录本回合已转化")
-  end)
-end)
-
--- 测试：一回合未转化 → 回合结束摸一张牌
-j_shichen:addTest(function(room, me)
-  local comp2 = room.players[2]
-  local c1
-  FkTest.runInRoom(function()
-    room:handleAddLoseSkills(me, j_shichen.name)
-    room.current = comp2
-    comp2.phase = Player.Play
-    c1 = room:printCard("slash", Card.Spade, 7)
-    room:obtainCard(comp2, { c1 }, true, fk.ReasonDraw, me, "test")
-    room:setCardMark(c1, "@@j_shichen_chen", 1)
+    chen = room:printCard("slash", Card.Spade, 7)
+    room:obtainCard(comp2, { chen }, true, fk.ReasonDraw, me, "test")
+    room:setCardMark(chen, "@@j_shichen_chen", 1)
+    room:setPlayerMark(me, "j_shichen_chen_id", chen.id)
+    room:setPlayerMark(me, "j_shichen_chen_name", "slash")
+    room:setPlayerMark(me, "j_shichen_chen_suit", Card.Spade)
   end)
   FkTest.runInRoom(function()
     local hand = #me:getCardIds("h")
     room.logic:trigger(fk.TurnEnd, comp2, {})
     lu.assertEquals(#me:getCardIds("h"), hand + 1, "未转化应于回合结束摸一张牌")
+
+    room:setPlayerMark(me, "j_shichen_conv-turn", 1)
+    hand = #me:getCardIds("h")
+    room.logic:trigger(fk.TurnEnd, comp2, {})
+    lu.assertEquals(#me:getCardIds("h"), hand, "已转化则回合结束不摸牌")
   end)
 end)
 
@@ -306,6 +342,9 @@ j_shichen:addTest(function(room, me)
     c1 = room:printCard("ex_nihilo", Card.Spade, 7)
     room:obtainCard(comp2, { c1 }, true, fk.ReasonDraw, me, "test")
     room:setCardMark(c1, "@@j_shichen_chen", 1)
+    room:setPlayerMark(me, "j_shichen_chen_id", c1.id)
+    room:setPlayerMark(me, "j_shichen_chen_name", "ex_nihilo")
+    room:setPlayerMark(me, "j_shichen_chen_suit", Card.Spade)
   end)
   FkTest.runInRoom(function()
     -- 情形1：可以使用 → 视为使用，不摸牌
@@ -321,19 +360,7 @@ j_shichen:addTest(function(room, me)
     lu.assertTrue(used, "“谶”进入弃牌堆应触发视为使用")
     lu.assertEquals(#me:getCardIds("h"), hand, "成功使用不应摸牌")
     lu.assertEquals(Fk:getCardById(c1.id):getMark("@@j_shichen_chen"), 0, "使用后“谶”标记应清除")
-
-    -- 情形2：无法使用 → 摸两张牌
-    local c2 = room:printCard("jink", Card.Heart, 8)
-    room:obtainCard(comp2, { c2 }, true, fk.ReasonDraw, me, "test")
-    room:setCardMark(c2, "@@j_shichen_chen", 1)
-    room.askToUseVirtualCard = function(self, who, params)
-      if who == me then return nil end  -- 无法使用
-      return origUseVirtual(self, who, params)
-    end
-    hand = #me:getCardIds("h")
-    room:throwCard(c2.id, "test", comp2, comp2)
-    room.askToUseVirtualCard = origUseVirtual
-    lu.assertEquals(#me:getCardIds("h"), hand + 2, "无法使用“谶”应改为摸两张牌")
+    lu.assertFalse(me:hasSkill("j_shichen_conv"), "“谶”消失后应收回转化技能")
   end)
 end)
 
