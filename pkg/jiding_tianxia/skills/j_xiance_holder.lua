@@ -5,7 +5,7 @@
 -- 注册进 Fk.skills；同一个文件里再 fk.CreateSkill 出来的第二个技能**不会被注册**。
 -- 后果：handleAddLoseSkills(p, "j_xiance_holder") 里 Fk.skills[name] 为 nil，
 -- 函数静默什么都不做 → 技能从来没授予过任何人 → 谋策永远印不出牌。
--- （这正是此前反复修不动的真正原因。识谶的 j_shichen_conv、显忌的 j_kuanggu 同病，已一并拆出。）
+-- （这正是此前反复修不动的真正原因。识谶的 j_shichen_conv、显忌的 j_kuanggu（现为 j_jie_kuanggu）同病，已一并拆出。）
 local j_xiance_holder = fk.CreateSkill {
   name = "j_xiance_holder",
 }

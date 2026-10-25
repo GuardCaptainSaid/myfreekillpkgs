@@ -1,7 +1,7 @@
 -- 计杨修·显忌（限定技）
 -- 当你进入濒死状态时，你可以令伤害来源（没有来源则默认执行选项1）选择一项：
 -- 1、令你摸体力上限张牌并将体力值回复至1点，然后直到你的下个回合结束，防止你受到的伤害；
---    你的下个回合开始时你获得技能【咆哮】和【狂骨】，回合结束时你失去所有体力；
+--    你的下个回合开始时你获得技能【咆哮】和【界狂骨】，回合结束时你失去所有体力；
 -- 2、令你将体力回复至上限并获得技能【空城】。
 -- 注意：技能名必须全局唯一。qunxing_cuican 包的宋宪&魏续有【献戟】也占用了 j_xianji，
 --       会互相覆盖，故本技能命名为 j_yangxiu_xianji。
@@ -10,19 +10,19 @@ local j_yangxiu_xianji = fk.CreateSkill {
   tags = { Skill.Limited },
 }
 
--- 自带【狂骨】副本（避免跨包依赖）
--- ！！副本实现必须单独占一个文件（j_kuanggu.lua）！！
+-- 自带【界狂骨】（界狂骨＝造成伤害后可摸一张牌或回复1点体力）
+-- ！！副本实现必须单独占一个文件（j_jie_kuanggu.lua）！！
 -- 引擎的技能加载器只注册「文件 return 的那个 skeleton」，同一文件里第二个 fk.CreateSkill
 -- 不会进入 Fk.skills，handleAddLoseSkills 会静默失败、技能根本授予不上。
-local KUANGGU = "j_kuanggu"
+local KUANGGU = "j_jie_kuanggu"
 
 Fk:loadTranslationTable{
   ["j_yangxiu_xianji"] = "显忌",
-  [":j_yangxiu_xianji"] = "限定技，当你进入濒死状态时，你可以令伤害来源（没有来源则默认执行选项1）选择一项：1、令你摸体力上限张牌并将体力值回复至1点，然后直到你的下个回合结束，防止你受到的伤害；你的下个回合开始时你获得技能【咆哮】和【狂骨】，回合结束时你失去所有体力；2、令你将体力回复至上限并获得技能【空城】。",
+  [":j_yangxiu_xianji"] = "限定技，当你进入濒死状态时，你可以令伤害来源（没有来源则默认执行选项1）选择一项：1、令你摸体力上限张牌并将体力值回复至1点，然后直到你的下个回合结束，防止你受到的伤害；你的下个回合开始时你获得技能【咆哮】和【界狂骨】，回合结束时你失去所有体力；2、令你将体力回复至上限并获得技能【空城】。",
 
   ["#j_yangxiu_xianji-invoke"] = "显忌：是否发动？由伤害来源选择一项",
   ["#j_yangxiu_xianji-choice"] = "显忌：请选择一项",
-  ["j_yangxiu_xianji_opt1"] = "令其摸体力上限张牌、体力回复至1点，其下回合获得【咆哮】【狂骨】，该回合结束时失去所有体力",
+  ["j_yangxiu_xianji_opt1"] = "令其摸体力上限张牌、体力回复至1点，其下回合获得【咆哮】【界狂骨】，该回合结束时失去所有体力",
   ["j_yangxiu_xianji_opt2"] = "令其将体力回复至上限并获得技能【空城】",
 }
 
@@ -106,7 +106,7 @@ j_yangxiu_xianji:addEffect(fk.DamageInflicted, {
   end,
 })
 
--- 你的下个回合开始时：获得【咆哮】和【狂骨】
+-- 你的下个回合开始时：获得【咆哮】和【界狂骨】
 j_yangxiu_xianji:addEffect(fk.TurnStart, {
   global = true,
   anim_type = "offensive",
@@ -142,9 +142,9 @@ j_yangxiu_xianji:addEffect(fk.TurnEnd, {
   end,
 })
 
--- 狂骨（副本）：实现见 j_kuanggu.lua（必须单独成文件，见上方说明）
+-- 界狂骨：实现见 j_jie_kuanggu.lua（必须单独成文件，见上方说明）
 
--- 测试：濒死无来源 → 默认选项1（摸X张、回复至1、防伤、下回合获咆哮狂骨、回合末失去所有体力）
+-- 测试：濒死无来源 → 默认选项1（摸X张、回复至1、防伤、下回合获咆哮界狂骨、回合末失去所有体力）
 j_yangxiu_xianji:addTest(function(room, me)
   FkTest.runInRoom(function()
     room:handleAddLoseSkills(me, j_yangxiu_xianji.name)
@@ -172,12 +172,12 @@ j_yangxiu_xianji:addTest(function(room, me)
     room.logic:trigger(fk.DamageInflicted, me, dmg)
     lu.assertTrue(dmg.prevented, "下个回合结束前伤害应被防止")
 
-    -- 下个回合开始：获得咆哮与狂骨
+    -- 下个回合开始：获得咆哮与界狂骨
     room.current = me
     me.phase = Player.Start
     room.logic:trigger(fk.TurnStart, me, {})
     lu.assertTrue(me:hasSkill("paoxiao"), "应获得【咆哮】")
-    lu.assertTrue(me:hasSkill("j_kuanggu"), "应获得【狂骨】")
+    lu.assertTrue(me:hasSkill("j_jie_kuanggu"), "应获得【界狂骨】")
 
     -- 回合结束：失去所有体力、收回技能、清除标记（mock 掉体力流失避免濒死结算）
     local loseHpArgs
@@ -190,7 +190,7 @@ j_yangxiu_xianji:addTest(function(room, me)
 
     lu.assertEquals(loseHpArgs.num, me.hp, "应失去所有体力")
     lu.assertFalse(me:hasSkill("paoxiao"), "回合结束应收回【咆哮】")
-    lu.assertFalse(me:hasSkill("j_kuanggu"), "回合结束应收回【狂骨】")
+    lu.assertFalse(me:hasSkill("j_jie_kuanggu"), "回合结束应收回【界狂骨】")
     lu.assertEquals(me:getMark("j_yangxiu_xianji_protect"), 0, "防伤标记应清除")
   end)
 end)
@@ -231,7 +231,5 @@ j_yangxiu_xianji:addTest(function(room, me)
     lu.assertEquals(#me:getCardIds("h"), hand, "限定技不应再次发动")
   end)
 end)
-
--- 测试：狂骨——对距离1以内角色造成伤害后回复等量体力（见 j_kuanggu.lua）
 
 return j_yangxiu_xianji
