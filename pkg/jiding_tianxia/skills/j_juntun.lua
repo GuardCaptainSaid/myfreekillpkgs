@@ -66,6 +66,7 @@ j_juntun:addEffect(fk.TurnStart, {
             -- 交给自己：直接收回手牌
             room:moveCards{
               ids = ids,
+              from = player,
               to = player,
               toArea = Card.PlayerHand,
               moveReason = fk.ReasonJustMove,
@@ -114,6 +115,7 @@ j_juntun:addEffect(fk.TurnStart, {
     if #chosen > 0 then
       room:moveCards{
         ids = chosen,
+        from = player,
         to = player,
         toArea = Card.PlayerSpecial,
         specialName = PILE,
@@ -203,7 +205,7 @@ j_juntun:addTest(function(room, me)
     room:obtainCard(me, { c1 }, true, fk.ReasonDraw, me, "test")
     -- 手动放一张黑桃牌上武将牌
     room:moveCards{
-      ids = { c1.id }, to = me, toArea = Card.PlayerSpecial, specialName = PILE,
+      ids = { c1.id }, from = me, to = me, toArea = Card.PlayerSpecial, specialName = PILE,
       moveReason = fk.ReasonPut, skillName = j_juntun.name, proposer = me,
     }
     room:setPlayerMark(me, ACTIVE, 1)

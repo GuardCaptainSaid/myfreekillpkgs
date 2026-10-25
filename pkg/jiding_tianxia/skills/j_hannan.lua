@@ -1,7 +1,7 @@
 -- 计杨阜·悍难
 -- 当一名角色成为【杀】的目标时，你可以将上一次进入弃牌堆的牌置于你的武将牌上；
 -- 若其中有装备牌，你与其各摸一张牌。若如此做，本回合【杀】的伤害+X（X为本回合你发动【悍难】的次数）。
--- 当你武将牌上有重复花色的牌时，你将其置入弃牌堆，然后从牌堆里获得等量该花色的牌。
+-- 当你武将牌上有重复花色的牌时，你将其中多余的牌置入弃牌堆，然后从牌堆里获得等量该花色的牌。
 local j_hannan = fk.CreateSkill {
   name = "j_hannan",
   derived_piles = "j_hannan",
@@ -13,37 +13,45 @@ local COUNT = "j_hannan_count-turn"
 
 Fk:loadTranslationTable{
   ["j_hannan"] = "悍难",
-  [":j_hannan"] = "当一名角色成为【杀】的目标时，你可以将上一次进入弃牌堆的牌置于你的武将牌上；若其中有装备牌，你与其各摸一张牌。若如此做，本回合【杀】的伤害+X（X为本回合你发动【悍难】的次数）。当你武将牌上有重复花色的牌时，你将其置入弃牌堆，然后从牌堆里获得等量该花色的牌。",
+  [":j_hannan"] = "当一名角色成为【杀】的目标时，你可以将上一次进入弃牌堆的牌置于你的武将牌上；若其中有装备牌，你与其各摸一张牌。若如此做，本回合【杀】的伤害+X（X为本回合你发动【悍难】的次数）。当你武将牌上有重复花色的牌时，你将其中多余的牌置入弃牌堆，然后从牌堆里获得等量该花色的牌。",
 
   ["#j_hannan-invoke"] = "悍难：是否将上一次进入弃牌堆的牌置于武将牌上（本回合【杀】伤害+1）？",
 }
 
--- 清除武将牌上重复花色的牌：同花色的牌全部置入弃牌堆，再从牌堆里获得等量该花色的牌
+-- 清除武将牌上重复花色的牌：每种花色留一张，多余的（重复的）置入弃牌堆，
+-- 然后从牌堆里获得「等量」（=置入弃牌堆的张数）该花色的牌，而不是把该花色的牌整组换掉
 local function cycleDuplicateSuits(room, player)
-  while not player.dead do
-    local pile = player:getPile(PILE)
-    if #pile == 0 then return end
-    local bySuit = {}
-    for _, id in ipairs(pile) do
-      local card = Fk:getCardById(id)
-      if card then
-        local s = card:getSuitString()
-        bySuit[s] = bySuit[s] or {}
-        table.insert(bySuit[s], id)
-      end
-    end
-    local dupSuit, dupIds
-    for s, ids in pairs(bySuit) do
-      if #ids >= 2 then
-        dupSuit, dupIds = s, ids
-        break
-      end
-    end
-    if not dupSuit then return end
+  if player.dead then return end
+  local pile = player:getPile(PILE)
+  if #pile == 0 then return end
 
-    local want = #dupIds
+  -- 按花色分组，每种花色保留第一张，其余记为“重复的牌”
+  local seen = {}
+  local dupBySuit = {}
+  local suitOrder = {}
+  for _, id in ipairs(pile) do
+    local card = Fk:getCardById(id)
+    if card then
+      local s = card:getSuitString()
+      if seen[s] then
+        if not dupBySuit[s] then
+          dupBySuit[s] = {}
+          table.insert(suitOrder, s)
+        end
+        table.insert(dupBySuit[s], id)
+      else
+        seen[s] = true
+      end
+    end
+  end
+  if #suitOrder == 0 then return end
+
+  for _, suit in ipairs(suitOrder) do
+    local ids = dupBySuit[suit]
+    local want = #ids
     room:moveCards{
-      ids = dupIds,
+      ids = ids,
+      from = player,
       toArea = Card.DiscardPile,
       moveReason = fk.ReasonDiscard,
       skillName = j_hannan.name,
@@ -54,15 +62,14 @@ local function cycleDuplicateSuits(room, player)
     for _, id in ipairs(room.draw_pile or {}) do
       if #found >= want then break end
       local c = Fk:getCardById(id)
-      if c and c:getSuitString() == dupSuit then
+      if c and c:getSuitString() == suit then
         table.insert(found, id)
       end
     end
     if #found > 0 then
       room:obtainCard(player, found, false, fk.ReasonGain, player, j_hannan.name)
-    else
-      return
     end
+    if player.dead then return end
   end
 end
 
@@ -187,6 +194,45 @@ j_hannan:addTest(function(room, me)
     room.askToSkillInvoke = origInvoke
     lu.assertTrue(table.contains(me:getPile(PILE), c1.id), "该牌应置于武将牌上")
     lu.assertEquals(me:getMark(COUNT), 1, "本回合悍难次数应为1")
+  end)
+end)
+
+-- 测试：武将牌上出现重复花色时，只把多余的那张置入弃牌堆，并从牌堆获得等量的该花色牌
+j_hannan:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local c1, c2
+  local handBefore
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_hannan.name)
+    room:setTag(LAST_TAG, {})
+    local origInvoke = room.askToSkillInvoke
+    room.askToSkillInvoke = function() return true end
+
+    local slash = Fk:cloneCard("slash")
+    -- 第一次：黑桃进弃牌堆 → 悍难置于武将牌
+    c1 = room:printCard("jink", Card.Spade, 4)
+    room:moveCards{ ids = { c1.id }, toArea = Card.DiscardPile, moveReason = fk.ReasonDiscard }
+    room.logic:trigger(fk.TargetConfirmed, comp2, { card = slash, to = comp2, from = me, tos = { comp2 } })
+
+    handBefore = #me:getCardIds("h")
+    -- 第二次：再来一张黑桃 → 武将为黑桃×2（重复）
+    c2 = room:printCard("jink", Card.Spade, 8)
+    room:moveCards{ ids = { c2.id }, toArea = Card.DiscardPile, moveReason = fk.ReasonDiscard }
+    room.logic:trigger(fk.TargetConfirmed, comp2, { card = slash, to = comp2, from = me, tos = { comp2 } })
+
+    room.askToSkillInvoke = origInvoke
+  end)
+  FkTest.runInRoom(function()
+    local pile = me:getPile(PILE)
+    lu.assertEquals(#pile, 1, "重复花色只应保留一张，多余的置入弃牌堆")
+    lu.assertEquals(Fk:getCardById(pile[1]):getSuitString(), "spade", "保留的应是黑桃")
+
+    local discarded = 0
+    for _, id in ipairs({ c1.id, c2.id }) do
+      if room:getCardArea(id) == Card.DiscardPile then discarded = discarded + 1 end
+    end
+    lu.assertEquals(discarded, 1, "只有多余的那一张应进弃牌堆，不是整组换掉")
+    lu.assertEquals(#me:getCardIds("h"), handBefore + 1, "应获得等量（1张）该花色的牌")
   end)
 end)
 
