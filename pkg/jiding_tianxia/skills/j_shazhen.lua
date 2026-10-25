@@ -21,7 +21,14 @@ Fk:loadTranslationTable{
 j_shazhen:addEffect(fk.EnterDying, {
   anim_type = "defensive",
   can_trigger = function(self, event, target, player, data)
-    return target == player and player:hasSkill(j_shazhen.name) and not player.dead
+    if target ~= player then return false end
+    if not player:hasSkill(j_shazhen.name) or player.dead then return false end
+    -- 至少要有另一名角色可以成为目标（不能选自己：给自己挂"冰封"只会让自己
+    -- 在回合结束时失去等量体力，没有任何意义）
+    for _, p in ipairs(player.room.alive_players) do
+      if p ~= player then return true end
+    end
+    return false
   end,
   on_cost = function(self, event, target, player, data)
     return player.room:askToSkillInvoke(player, {
@@ -31,8 +38,10 @@ j_shazhen:addEffect(fk.EnterDying, {
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room
+    local candidates = table.filter(room.alive_players, function(p) return p ~= player end)
+    if #candidates == 0 then return end
     local tos = room:askToChoosePlayers(player, {
-      targets = room.alive_players,
+      targets = candidates,
       min_num = 1,
       max_num = 3,
       cancelable = true,
@@ -137,6 +146,38 @@ j_shazhen:addTest(function(room, me)
   end)
 
   -- 回合结束 → 清空标记并失去等量体力
+  FkTest.runInRoom(function()
+    local hp = comp2.hp
+    room.logic:trigger(fk.TurnEnd, comp2, {})
+    lu.assertEquals(comp2:getMark(BING), 0, "回合结束应清空冰封")
+    lu.assertEquals(comp2.hp, hp - 3, "回合结束应失去3点体力")
+  end)
+end)
+
+-- 测试（真实流程）：EnterDying → 真实弹窗选人 → 目标获得体力上限枚冰封；
+-- 该角色真实使用牌 → 牌被无效且消耗一枚；回合结束 → 失去等量体力
+j_shazhen:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_shazhen.name)
+    comp2.maxHp = 4
+    comp2.hp = 4
+  end)
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1", { card = {}, targets = { comp2.id } } })
+    room.logic:trigger(fk.EnterDying, me, {})
+    lu.assertEquals(comp2:getMark(BING), 4, "目标应通过真实弹窗获得其体力上限(4)枚冰封")
+    lu.assertEquals(me:getMark(BING), 0, "不能选自己：自己不应获得冰封")
+  end)
+  FkTest.runInRoom(function()
+    -- comp2 真实使用【杀】指定 me：应被"冰封"无效，且不造成伤害
+    local slash = room:printCard("slash", Card.Spade, 5)
+    room:obtainCard(comp2, { slash }, true, fk.ReasonDraw, me, "test")
+    local hp_before = me.hp
+    room:useCard{ from = comp2, tos = { me }, card = slash }
+    lu.assertEquals(comp2:getMark(BING), 3, "使用牌应移去一枚冰封")
+    lu.assertEquals(me.hp, hp_before, "冰封令此牌无效：不应受到伤害")
+  end)
   FkTest.runInRoom(function()
     local hp = comp2.hp
     room.logic:trigger(fk.TurnEnd, comp2, {})
