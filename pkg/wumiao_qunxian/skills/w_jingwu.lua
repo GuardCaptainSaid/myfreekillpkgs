@@ -37,10 +37,15 @@ w_jingwu:addEffect("targetmod", {
     end
     return 0
   end,
+  -- 注意：这两个回调在**客户端**也会被调用（判断能否使用/选择目标），
+  -- 而 ClientPlayer 没有 room 字段，直接写 player.room 会 attempt to index a nil value。
+  -- 客户端拿不到房间级 tag，这里降级返回 false；实际结算以服务端为准。
   bypass_times = function(self, player, skill, scope, card, to)
+    if not player.room then return false end
     return isMarkedCard(player.room, card)
   end,
   bypass_distances = function(self, player, skill, card, to)
+    if not player.room then return false end
     return isMarkedCard(player.room, card)
   end,
 })

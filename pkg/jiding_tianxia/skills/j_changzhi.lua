@@ -34,10 +34,14 @@ j_changzhi:addEffect("prohibit", {
 })
 
 -- 手牌上限 +Y
+-- 注意：correct_func 在**客户端**也会被调用（手牌上限要显示），而 ClientPlayer 没有 room 字段，
+-- 所以必须用 Fk:currentRoom()，写 player.room 会直接 attempt to index a nil value
 j_changzhi:addEffect("maxcards", {
   correct_func = function(self, player)
     if not player:hasSkill(j_changzhi.name) then return 0 end
-    return sumAllHp(player.room)
+    local room = Fk:currentRoom()
+    if not room then return 0 end
+    return sumAllHp(room)
   end,
 })
 
@@ -64,6 +68,22 @@ j_changzhi:addTest(function(room, me)
       y = y + math.max(p.hp, 0)
     end
     lu.assertEquals(me:getMaxCards(), math.max(me.hp, 0) + y, "手牌上限应为体力值+Y")
+  end)
+end)
+
+-- 测试：客户端也能算手牌上限（correct_func 在客户端执行，ClientPlayer 没有 room 字段）
+j_changzhi:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_changzhi.name)
+  end)
+  FkTest.runInClient(function()
+    lu.assertTrue(Self:hasSkill(j_changzhi.name), "客户端应看到【倡制】")
+    local y = 0
+    for _, p in ipairs(ClientInstance.alive_players) do
+      y = y + math.max(p.hp, 0)
+    end
+    lu.assertEquals(Self:getMaxCards(), math.max(Self.hp, 0) + y,
+      "客户端手牌上限应为体力值+Y，且不得因 player.room 为 nil 报错")
   end)
 end)
 
