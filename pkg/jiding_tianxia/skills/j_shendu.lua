@@ -10,6 +10,9 @@ Fk:loadTranslationTable{
 
   ["#j_shendu-invoke"] = "审度：是否进行体力值次判定，令【抗辞】次数+其中红色的数量？",
   ["#j_shendu-count"] = "审度：令【抗辞】次数+%arg",
+
+  -- 标记区显示：抗辞次数+ N
+  ["@j_kangci_count-turn"] = "抗辞次数+",
 }
 
 j_shendu:addEffect(fk.TurnStart, {
@@ -41,12 +44,25 @@ j_shendu:addEffect(fk.TurnStart, {
     end
     if red > 0 and not player.dead then
       room:addPlayerMark(player, "j_kangci_count-turn", red)
+      -- 标记区可见：显示「抗辞次数+ N」
+      room:setPlayerMark(player, "@j_kangci_count-turn", red)
       room:sendLog{
         type = "#j_shendu-count",
         from = player.id,
         arg = tostring(red),
       }
     end
+  end,
+})
+
+-- 回合结束清掉可见标记（防御性：部分引擎版本不会自动清 @ 标记的 -turn）
+j_shendu:addEffect(fk.TurnEnd, {
+  can_trigger = function(self, event, target, player, data)
+    return target == player and player:getMark("@j_kangci_count-turn") > 0
+  end,
+  on_cost = function() return true end,
+  on_use = function(self, event, target, player, data)
+    player.room:setPlayerMark(player, "@j_kangci_count-turn", 0)
   end,
 })
 
@@ -67,6 +83,7 @@ j_shendu:addTest(function(room, me)
     room.logic:trigger(fk.TurnStart, me, {})
     room.askToSkillInvoke = origInvoke
     lu.assertEquals(me:getMark("j_kangci_count-turn"), 2, "两张红色判定 → 抗辞次数+2")
+    lu.assertEquals(me:getMark("@j_kangci_count-turn"), 2, "标记区应显示「抗辞次数+ 2」")
   end)
 end)
 
