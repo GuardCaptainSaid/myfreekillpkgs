@@ -16,13 +16,23 @@ Fk:loadTranslationTable{
   ["j_bingcheng"] = "冰城",
   [":j_bingcheng"] = "锁定技，当你受到伤害时，你回复等量体力；当你累计受到一点火焰伤害、一点雷属性伤害、一点无属性伤害后，此技能失效。",
 
+  -- `@@` 前缀：标记区只显示翻译文字、不显示数值（三种属性只需累计到 1 点）
+  ["@@j_bingcheng_fire"] = "火",
+  ["@@j_bingcheng_thunder"] = "雷",
+  ["@@j_bingcheng_normal"] = "无",
   ["@@j_bingcheng_invalid"] = "冰城失效",
 }
 
+-- 火 / 雷 / 无 三种属性各累计一点即失效，故标记值只需 1（同时作为判定条件与显示标记）
+local MARK_FIRE = "@@j_bingcheng_fire"
+local MARK_THUNDER = "@@j_bingcheng_thunder"
+local MARK_NORMAL = "@@j_bingcheng_normal"
+local MARK_INVALID = "@@j_bingcheng_invalid"
+
 local TYPE_MARK = {
-  [fk.FireDamage] = "j_bingcheng_fire",
-  [fk.ThunderDamage] = "j_bingcheng_thunder",
-  [fk.NormalDamage] = "j_bingcheng_normal",
+  [fk.FireDamage] = MARK_FIRE,
+  [fk.ThunderDamage] = MARK_THUNDER,
+  [fk.NormalDamage] = MARK_NORMAL,
 }
 
 j_bingcheng:addEffect(fk.HpChanged, {
@@ -32,7 +42,7 @@ j_bingcheng:addEffect(fk.HpChanged, {
   can_trigger = function(self, event, target, player, data)
     if target ~= player then return false end
     if not player:hasSkill(j_bingcheng.name) or player.dead then return false end
-    if player:getMark("j_bingcheng_invalid") > 0 then return false end
+    if player:getMark(MARK_INVALID) > 0 then return false end
     -- 只响应"受到伤害"导致的体力变化：体力流失（loseHp）/回复（recover）不算受伤
     if data.reason ~= "damage" or not data.damageEvent then return false end
     -- 护甲挡完时 num 为 0，没有实际掉血，不触发
@@ -54,18 +64,21 @@ j_bingcheng:addEffect(fk.HpChanged, {
       }
     end
 
-    -- ② 累计各属性受到的伤害
+    -- ② 累计各属性受到的伤害（标记同时用于向所有玩家显示已累计的属性）
     local mark = TYPE_MARK[dtype]
-    if mark then
-      room:setPlayerMark(player, mark, player:getMark(mark) + dmg)
+    if mark and player:getMark(mark) < 1 then
+      room:setPlayerMark(player, mark, 1)
     end
 
     -- ③ 火、雷、无属性各累计 ≥1 → 此技能失效
-    if player:getMark("j_bingcheng_fire") >= 1
-      and player:getMark("j_bingcheng_thunder") >= 1
-      and player:getMark("j_bingcheng_normal") >= 1 then
-      room:setPlayerMark(player, "j_bingcheng_invalid", 1)
-      room:setPlayerMark(player, "@@j_bingcheng_invalid", 1)
+    if player:getMark(MARK_FIRE) >= 1
+      and player:getMark(MARK_THUNDER) >= 1
+      and player:getMark(MARK_NORMAL) >= 1 then
+      -- 三种属性已齐、技能已失效，属性标记不再有意义，清掉只留「冰城失效」
+      room:setPlayerMark(player, MARK_FIRE, 0)
+      room:setPlayerMark(player, MARK_THUNDER, 0)
+      room:setPlayerMark(player, MARK_NORMAL, 0)
+      room:setPlayerMark(player, MARK_INVALID, 1)
     end
   end,
 })
@@ -99,16 +112,23 @@ j_bingcheng:addTest(function(room, me)
     -- 普通伤害：回复等量 → 体力不变
     room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
     lu.assertEquals(me.hp, 2, "冰城：受到1点普通伤害应回复1点，体力不变")
-    lu.assertEquals(me:getMark("j_bingcheng_normal"), 1, "应累计1点无属性伤害")
-    lu.assertEquals(me:getMark("j_bingcheng_invalid"), 0, "尚未集齐三种属性")
+    lu.assertEquals(me:getMark("@@j_bingcheng_normal"), 1, "应累计1点无属性伤害并显示「无」标记")
+    lu.assertEquals(me:getMark("@@j_bingcheng_invalid"), 0, "尚未集齐三种属性")
+
+    -- 再受一次普通伤害：显示标记值固定为 1（不累计点数，也不需要重复显示）
+    room:damage{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(me:getMark("@@j_bingcheng_normal"), 1, "「无」标记只需显示一次")
 
     -- 火焰伤害
     room:damage{ from = comp2, to = me, damage = 1, damageType = fk.FireDamage }
-    lu.assertEquals(me:getMark("j_bingcheng_fire"), 1, "应累计1点火焰伤害")
+    lu.assertEquals(me:getMark("@@j_bingcheng_fire"), 1, "应累计1点火焰伤害并显示「火」标记")
 
     -- 雷属性伤害 → 三类齐全，技能失效
     room:damage{ from = comp2, to = me, damage = 1, damageType = fk.ThunderDamage }
-    lu.assertEquals(me:getMark("j_bingcheng_invalid"), 1, "集齐三种属性后冰城应失效")
+    lu.assertEquals(me:getMark("@@j_bingcheng_invalid"), 1, "集齐三种属性后冰城应失效")
+    lu.assertEquals(me:getMark("@@j_bingcheng_fire"), 0, "失效后应清掉「火」标记")
+    lu.assertEquals(me:getMark("@@j_bingcheng_thunder"), 0, "失效后应清掉「雷」标记")
+    lu.assertEquals(me:getMark("@@j_bingcheng_normal"), 0, "失效后应清掉「无」标记")
 
     -- 失效后不再回复
     local hp = me.hp
