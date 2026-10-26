@@ -72,6 +72,20 @@ Fk:loadTranslationTable{
   ["~ji_xuyou"] = "恃功而骄……终至杀身……",
 }
 
+-- 计毛玠 3/4（清公翼汉）
+General:new(extension, "ji_maojie", "wei", 3, 4):addSkills {
+  "j_maojie_liucha", "j_maojie_zhengse",
+}
+Fk:loadTranslationTable{
+  ["ji_maojie"] = "计毛玠",
+  ["#ji_maojie"] = "清公翼汉",
+  ["designer:ji_maojie"] = "袁焉",
+  ["illustrator:ji_maojie"] = "豆包AI",
+  ["cv:ji_maojie"] = "佚名",
+
+  ["~ji_maojie"] = "选贤任能……唯在清正……",
+}
+
 General:new(extension, "ji_luxun", "wu", 3, 3):addSkills { "j_lianying", "j_jizhi", "j_qianxun", "j_zhanhuo" }
 Fk:loadTranslationTable{
   ["ji_luxun"] = "计陆逊",
