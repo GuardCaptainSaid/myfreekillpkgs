@@ -366,6 +366,20 @@ Fk:loadTranslationTable{
   ["~ji_guoyuan"] = "簿书未竟，而身已远矣……",
 }
 
+-- 计庞统 3/4（焚络鸣凰）
+General:new(extension, "ji_pangtong", "shu", 3, 4):addSkills {
+  "j_pangtong_lianhuan", "j_pangtong_niepan", "j_pangtong_huofeng",
+}
+Fk:loadTranslationTable{
+  ["ji_pangtong"] = "计庞统",
+  ["#ji_pangtong"] = "焚络鸣凰",
+  ["designer:ji_pangtong"] = "袁焉",
+  ["illustrator:ji_pangtong"] = "豆包AI",
+  ["cv:ji_pangtong"] = "佚名",
+
+  ["~ji_pangtong"] = "凤雏折翼，天不假年……",
+}
+
 -- 计司马昭、计许攸 皮肤
 extension:addSkinPackage{
   content = {
