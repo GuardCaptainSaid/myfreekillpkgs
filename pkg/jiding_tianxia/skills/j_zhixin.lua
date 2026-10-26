@@ -84,6 +84,8 @@ j_zhixin:addEffect(fk.PreCardUse, {
     return data.card.skillName == j_zhixin.name and data.card.type == Card.TypeBasic
   end,
   on_cost = function(self, event, target, player, data)
+    -- 触发效果不参与阴阳转换（只有主动使用技能才翻转）
+    event:setCostData(self, { no_switch = true })
     return true
   end,
   on_use = function(self, event, target, player, data)
@@ -100,6 +102,8 @@ j_zhixin:addEffect(fk.Damaged, {
     return player:hasSkill(j_zhixin.name)
   end,
   on_cost = function(self, event, target, player, data)
+    -- 触发效果不参与阴阳转换（只有主动使用技能才翻转）
+    event:setCostData(self, { no_switch = true })
     return true
   end,
   on_use = function(self, event, target, player, data)
@@ -115,6 +119,8 @@ j_zhixin:addEffect(fk.EventPhaseEnd, {
     return player:hasSkill(j_zhixin.name) and player.phase == Player.Play
   end,
   on_cost = function(self, event, target, player, data)
+    -- 触发效果不参与阴阳转换（只有主动使用技能才翻转）
+    event:setCostData(self, { no_switch = true })
     return true
   end,
   on_use = function(self, event, target, player, data)
@@ -140,6 +146,8 @@ j_zhixin:addEffect(fk.EventPhaseStart, {
     return target == player and player:hasSkill(j_zhixin.name) and player.phase == Player.Start
   end,
   on_cost = function(self, event, target, player, data)
+    -- 触发效果不参与阴阳转换（只有主动使用技能才翻转）
+    event:setCostData(self, { no_switch = true })
     return true
   end,
   on_use = function(self, event, target, player, data)
@@ -163,6 +171,8 @@ j_zhixin:addEffect(fk.CardUseFinished, {
     return not table.contains(data.tos, player)
   end,
   on_cost = function(self, event, target, player, data)
+    -- 触发效果不参与阴阳转换（只有主动使用技能才翻转）
+    event:setCostData(self, { no_switch = true })
     return true
   end,
   on_use = function(self, event, target, player, data)

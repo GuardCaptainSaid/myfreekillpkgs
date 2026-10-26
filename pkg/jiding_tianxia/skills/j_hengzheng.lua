@@ -73,6 +73,8 @@ j_hengzheng:addEffect(fk.EventPhaseStart, {
     return target == player and player:hasSkill(j_hengzheng.name) and player.phase == Player.Start
   end,
   on_cost = function(self, event, target, player, data)
+    -- 触发效果不参与阴阳转换
+    event:setCostData(self, { no_switch = true })
     return true
   end,
   on_use = function(self, event, target, player, data)
@@ -101,10 +103,15 @@ j_hengzheng:addEffect(fk.CardUsing, {
     return false
   end,
   on_cost = function(self, event, target, player, data)
-    return event.room:askToSkillInvoke(player, {
+    local ok = event.room:askToSkillInvoke(player, {
       skill_name = j_hengzheng.name,
       prompt = "#j_hengzheng-yin::" .. data.from.id,
     })
+    if ok then
+      -- 触发效果不参与阴阳转换（on_use 里手动翻回阳）
+      event:setCostData(self, { no_switch = true })
+    end
+    return ok
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room

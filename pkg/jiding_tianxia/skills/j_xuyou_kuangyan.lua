@@ -112,29 +112,34 @@ end
 j_xuyou_kuangyan.do_yin = doYin
 j_xuyou_kuangyan.do_yang = doYang
 
--- 阳形态（主动）
+-- 出牌阶段限一次的主动技：按当前形态执行阴/阳
+-- 【注意】引擎一个技能只能有 1 个 active/viewas 效果（多写会被丢弃并报 qCritical），
+-- 所以阴阳两形态必须合并成同一个 active，在 on_use 里分支。
 j_xuyou_kuangyan:addEffect("active", {
   anim_type = "drawcard",
-  prompt = "#j_xuyou_kuangyan-yang",
+  prompt = function(self, player)
+    if player:getSwitchSkillState(j_xuyou_kuangyan.name) == fk.SwitchYang then
+      return "#j_xuyou_kuangyan-yang"
+    end
+    return "#j_xuyou_kuangyan-keep"
+  end,
   max_phase_use_time = 1,
   can_use = function(self, player)
-    return player:getSwitchSkillState(j_xuyou_kuangyan.name) == fk.SwitchYang
+    return player:usedSkillTimes(j_xuyou_kuangyan.name, Player.HistoryPhase) == 0
   end,
   on_use = function(self, room, effect)
-    doYang(room, effect.from)
-  end,
-})
-
--- 阴形态（主动）
-j_xuyou_kuangyan:addEffect("active", {
-  anim_type = "support",
-  prompt = "#j_xuyou_kuangyan-keep",
-  max_phase_use_time = 1,
-  can_use = function(self, player)
-    return player:getSwitchSkillState(j_xuyou_kuangyan.name) == fk.SwitchYin
-  end,
-  on_use = function(self, room, effect)
-    doYin(room, effect.from)
+    local player = effect.from
+    -- 【注意】转换技在 on_use 执行前就已经翻转了形态，
+    -- 所以必须用引擎记录的"发动前状态"effect.switch_state，不能读 getSwitchSkillState。
+    local state = effect.switch_state
+    if not state then
+      state = player:getSwitchSkillState(j_xuyou_kuangyan.name)
+    end
+    if state == fk.SwitchYang then
+      doYang(room, player)
+    else
+      doYin(room, player)
+    end
   end,
 })
 
@@ -245,8 +250,10 @@ j_xuyou_kuangyan:addTest(function(room, me)
   end)
   FkTest.runInRoom(function()
     local sk = Fk.skills[j_xuyou_kuangyan.name]
+    -- 走真实的主动技使用路径（引擎会写入发动前的形态 effect.switch_state）
+    local effect = { from = me, tos = {}, cards = {}, cost_data = {}, switch_state = fk.SwitchYang }
     room:useSkill(me, sk, function()
-      sk:onUse(room, { from = me, tos = {}, cards = {}, cost_data = {} })
+      sk:onUse(room, effect)
     end, {})
     lu.assertEquals(me:getSwitchSkillState(j_xuyou_kuangyan.name), fk.SwitchYin,
       "阳形态发动后应翻转为阴形态")
@@ -256,6 +263,43 @@ j_xuyou_kuangyan:addTest(function(room, me)
     end
     lu.assertTrue(seen[Card.TypeBasic] and seen[Card.TypeTrick] and seen[Card.TypeEquip],
       "真实发动后手牌应包含三种类型")
+  end)
+end)
+
+-- 测试4（真实发动）：阴形态下点狂言，走的是"保留一种类型"分支，且翻转为阳
+j_xuyou_kuangyan:addTest(function(room, me)
+  local slashId, trickId, equipId
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_xuyou_kuangyan.name)
+    room.current = me
+    me.phase = Player.Play
+    room:setPlayerMark(me, MarkEnum.SwithSkillPreName .. j_xuyou_kuangyan.name, 1)  -- 阴
+    slashId = room:printCard("slash", Card.Spade, 3).id
+    trickId = room:printCard("dismantlement", Card.Club, 5).id
+    equipId = room:printCard("qinggang_sword", Card.Diamond, 6).id
+    room:obtainCard(me, { slashId, trickId, equipId }, true, fk.ReasonDraw, me, "test")
+  end)
+  FkTest.runInRoom(function()
+    local sk = Fk.skills[j_xuyou_kuangyan.name]
+    lu.assertTrue(sk:isInstanceOf(ActiveSkill), "狂言主技能应是主动技")
+    lu.assertTrue(sk:canUse(me), "阴形态下狂言应可发动")
+    local origChoice = room.askToChoice
+    room.askToChoice = function(self, who, params)
+      if params.skill_name == j_xuyou_kuangyan.name then
+        return "j_xuyou_kuangyan:basic"
+      end
+      return origChoice(self, who, params)
+    end
+    room:useSkill(me, sk, function()
+      sk:onUse(room, { from = me, tos = {}, cards = {}, cost_data = {} })
+    end, {})
+    room.askToChoice = origChoice
+    local hand = me:getCardIds("h")
+    lu.assertTrue(table.contains(hand, slashId), "阴形态应保留选中的基本牌")
+    lu.assertEquals(me:getSwitchSkillState(j_xuyou_kuangyan.name), fk.SwitchYang,
+      "阴形态发动后应翻转为阳")
+    -- 出牌阶段限一次
+    lu.assertFalse(sk:canUse(me), "出牌阶段已用过后不应再用")
   end)
 end)
 
