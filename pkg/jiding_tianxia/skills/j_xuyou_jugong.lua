@@ -1,18 +1,23 @@
 -- 计许攸·倨功
--- 每名角色的回合限一次，当其他角色于其回合内首次造成伤害或获得牌时，
+-- 每名角色回合限一次，当其他角色每回合首次造成伤害或获得牌时，
 -- 你可以发动一次"狂言"，然后其下次使用牌的目标必须包含你，且该牌无距离和次数限制。
 local j_xuyou_jugong = fk.CreateSkill {
   name = "j_xuyou_jugong",
 }
 
 -- `@@` 前缀：标记区只显示文字（不显示数值）
-local MUST = "@@j_xuyou_jugong_must"        -- 该角色下次使用牌必须包含许攸为目标
--- 无距离 / 无次数限制：直接用引擎内置标记（引擎的 hasMark 支持前缀 + "-turn" 后缀匹配）
-local FREE_DIST = MarkEnum.BypassDistancesLimit .. "-turn"
-local FREE_TIMES = MarkEnum.BypassTimesLimit .. "-turn"
-local USED = "j_xuyou_jugong_used"          -- 本回合已发动（回合结束清 0）
-local FIRST_DMG = "j_xuyou_jugong_first_dmg"   -- 该角色本回合已首次造成伤害
-local FIRST_GAIN = "j_xuyou_jugong_first_gain" -- 该角色本回合已首次获得牌
+-- 【注意】带 -round 后缀的 @ / @@ 标记，翻译键必须写"含后缀的完整名"，否则 UI 直接显示原始标记名
+local MUST = "@@j_xuyou_jugong_must-round"   -- 该角色下次使用牌必须包含许攸为目标
+-- 无距离 / 无次数限制：用引擎内置标记。加 -round 而不是 -turn，
+-- 因为"其下次使用牌"可能发生在其下个回合；但也必须有上限，
+-- 否则该角色只要一直不出牌就能永久享受无限距离/次数。
+local FREE_DIST = MarkEnum.BypassDistancesLimit .. "-round"
+local FREE_TIMES = MarkEnum.BypassTimesLimit .. "-round"
+-- 【注意】下面三个必须带 -turn 后缀，交给引擎的 clearHistory 自动清理，
+-- 不要自己写 TurnEnd 效果去清（自建清理容易漏掉分支，导致标记永久残留=技能再也不发动）
+local USED = "j_xuyou_jugong_used-turn"        -- 本回合已发动
+local FIRST_DMG = "j_xuyou_jugong_dmg-turn"    -- 该角色本回合已首次造成伤害
+local FIRST_GAIN = "j_xuyou_jugong_gain-turn"  -- 该角色本回合已首次获得牌
 
 local KUANGYAN = "j_xuyou_kuangyan"
 
@@ -23,7 +28,7 @@ Fk:loadTranslationTable{
 
   [MUST] = "倨功",
   ["#j_xuyou_jugong-invoke"] = "倨功：是否发动一次“狂言”，并令 %src 下次使用牌必须包含你？",
-  ["#j_xuyou_jugong-dmg"] = "倨功：%src 首次造成伤害",
+  ["#j_xuyou_jugong-gain"] = "倨功：%src 首次获得牌",
 
   ["$j_xuyou_jugong1"] = "功在社稷，何须尔等置喙？",
   ["$j_xuyou_jugong2"] = "此功，唯我许子远可成！",
@@ -33,36 +38,50 @@ Fk:loadTranslationTable{
 local function kuangyanSkeleton()
   local s = Fk.skills[KUANGYAN]
   if s == nil then return nil end
+  -- Fk.skills 里存的是真正的 Skill，逻辑函数挂在它的 skeleton 上
   if s.getSkeleton then
     local skel = s:getSkeleton()
-    return skel or s
+    if skel then return skel end
   end
   return s
 end
 
 -- 发动一次"狂言"（按当前形态执行，并按转换技规则翻转形态）
 local function invokeKuangyan(room, player)
+  if not player:hasSkill(KUANGYAN) then return false end
   local ky = kuangyanSkeleton()
-  if not ky or not player:hasSkill(KUANGYAN) then return end
-  if player:getSwitchSkillState(KUANGYAN) == fk.SwitchYang then
-    if ky.do_yang then ky.do_yang(room, player) end
+  if ky == nil then return false end
+  local isYang = player:getSwitchSkillState(KUANGYAN) == fk.SwitchYang
+  if isYang then
+    if type(ky.do_yang) ~= "function" then return false end
+    ky.do_yang(room, player)
   else
-    if ky.do_yin then ky.do_yin(room, player) end
+    if type(ky.do_yin) ~= "function" then return false end
+    ky.do_yin(room, player)
   end
-  -- 手动翻转形态（等同于"发动一次"转换技）
-  room:setPlayerMark(player, MarkEnum.SwithSkillPreName .. KUANGYAN,
-    player:getSwitchSkillState(KUANGYAN, true))
+  -- 手动翻转形态（等同于"发动一次"转换技）。
+  -- 转换技标记值：<1 为阳(0)，>=1 为阴(1)
+  room:setPlayerMark(player, MarkEnum.SwithSkillPreName .. KUANGYAN, isYang and fk.SwitchYin or fk.SwitchYang)
+  return true
 end
 
 -- 共同的效果：发动狂言 + 给目标角色挂"必须包含你 / 无限制"
 local function doJugong(room, player, from)
-  room:setPlayerMark(player, USED, 1)
   invokeKuangyan(room, player)
   if from and not from.dead then
     room:setPlayerMark(from, MUST, 1)
     room:setPlayerMark(from, FREE_DIST, 1)
     room:setPlayerMark(from, FREE_TIMES, 1)
   end
+end
+
+-- 统一的发动询问：只有玩家真的选了"发动"才记账，取消则回滚，
+-- 否则一旦误点取消/超时，本回合这个角色就再也触发不了了。
+local function askInvoke(room, player, from, promptKey)
+  return room:askToSkillInvoke(player, {
+    skill_name = j_xuyou_jugong.name,
+    prompt = promptKey .. "::" .. from.id,
+  })
 end
 
 -- 触发①：其他角色造成伤害
@@ -74,17 +93,21 @@ j_xuyou_jugong:addEffect(fk.Damaged, {
     if player:getMark(USED) > 0 then return false end
     local from = data and data.from
     if not from or from == player or from.dead then return false end
-    -- 每回合首次造成伤害
+    -- 每名角色每回合首次造成伤害
     return from:getMark(FIRST_DMG) == 0
   end,
   on_cost = function(self, event, target, player, data)
     local room = player.room
     local from = data.from
-    room:setPlayerMark(from, FIRST_DMG, 1)
-    return room:askToSkillInvoke(player, {
+    if room:askToSkillInvoke(player, {
       skill_name = j_xuyou_jugong.name,
       prompt = "#j_xuyou_jugong-invoke::" .. from.id,
-    })
+    }) then
+      room:setPlayerMark(from, FIRST_DMG, 1)
+      room:setPlayerMark(player, USED, 1)
+      return true
+    end
+    return false
   end,
   on_use = function(self, event, target, player, data)
     doJugong(player.room, player, data.from)
@@ -92,12 +115,14 @@ j_xuyou_jugong:addEffect(fk.Damaged, {
 })
 
 -- 触发②：其他角色获得牌
+-- 只取"本回合还没被记过"的角色，否则同一批移动里第一个人挡在前面会让技能永远不触发
 local function findGainFrom(player, data)
   for _, move in ipairs(data) do
     local to = move.to
     if to and to ~= player and not to.dead
       and move.toArea == Card.PlayerHand
-      and move.from ~= to then
+      and move.from ~= to
+      and to:getMark(FIRST_GAIN) == 0 then
       return to
     end
   end
@@ -112,32 +137,42 @@ j_xuyou_jugong:addEffect(fk.AfterCardsMove, {
     if player:getMark(USED) > 0 then return false end
     local from = findGainFrom(player, data)
     if not from then return false end
-    return from:getMark(FIRST_GAIN) == 0
+    -- 缓存下来，避免 on_cost/on_use 里再次遍历时状态已变化
+    event:setSkillData(self, "jugong_gain_from", from)
+    return true
   end,
   on_cost = function(self, event, target, player, data)
     local room = player.room
-    local from = findGainFrom(player, data)
-    if not from then return false end
-    room:setPlayerMark(from, FIRST_GAIN, 1)
-    return room:askToSkillInvoke(player, {
+    local from = event:getSkillData(self, "jugong_gain_from")
+    if not from or from.dead then return false end
+    if room:askToSkillInvoke(player, {
       skill_name = j_xuyou_jugong.name,
       prompt = "#j_xuyou_jugong-invoke::" .. from.id,
-    })
+    }) then
+      room:setPlayerMark(from, FIRST_GAIN, 1)
+      room:setPlayerMark(player, USED, 1)
+      return true
+    end
+    return false
   end,
   on_use = function(self, event, target, player, data)
-    doJugong(player.room, player, findGainFrom(player, data))
+    doJugong(player.room, player, event:getSkillData(self, "jugong_gain_from"))
   end,
 })
 
--- 其下次使用的牌：目标必须包含许攸
+-- 其下次使用牌：目标必须包含许攸
 j_xuyou_jugong:addEffect(fk.CardUsing, {
   global = true,
   on_cost = Util.TrueFunc,
   can_trigger = function(self, event, target, player, data)
-    if not player:hasSkill(j_xuyou_jugong.name) then return false end
+    if not player:hasSkill(j_xuyou_jugong.name) or player.dead then return false end
     local from = data and data.from
     if not from or from == player or from.dead then return false end
-    return from:getMark(MUST) > 0
+    if from:getMark(MUST) == 0 then return false end
+    -- 响应牌（【闪】【无懈可击】等）没有可选目标，不消耗"下次使用牌"的机会
+    if data.toCard then return false end
+    if #(data.tos or {}) == 0 then return false end
+    return true
   end,
   on_use = function(self, event, target, player, data)
     local room = player.room
@@ -145,7 +180,7 @@ j_xuyou_jugong:addEffect(fk.CardUsing, {
     room:setPlayerMark(from, MUST, 0)
     room:setPlayerMark(from, FREE_DIST, 0)
     room:setPlayerMark(from, FREE_TIMES, 0)
-    if not player:isAlive() or not data.card then return end
+    if player.dead or not data.card then return end
     if table.contains(data.tos or {}, player) then return end
 
     -- 只有该牌本就可以指许攸时才强制加入目标（【桃】【无中生有】这类不能强加）
@@ -163,47 +198,22 @@ j_xuyou_jugong:addEffect(fk.CardUsing, {
   end,
 })
 
--- 回合结束：清理本回合的一次性状态
-j_xuyou_jugong:addEffect(fk.TurnEnd, {
-  global = true,
-  on_cost = Util.TrueFunc,
-  can_trigger = function(self, event, target, player, data)
-    return player:hasSkill(j_xuyou_jugong.name)
-  end,
-  on_use = function(self, event, target, player, data)
-    local room = player.room
-    room:setPlayerMark(player, USED, 0)
-    for _, p in ipairs(room.players) do
-      if p:getMark(FIRST_DMG) > 0 or p:getMark(FIRST_GAIN) > 0
-        or p:getMark(MUST) > 0 or p:getMark(FREE_DIST) > 0 or p:getMark(FREE_TIMES) > 0 then
-        room:setPlayerMark(p, FIRST_DMG, 0)
-        room:setPlayerMark(p, FIRST_GAIN, 0)
-        room:setPlayerMark(p, MUST, 0)
-        room:setPlayerMark(p, FREE_DIST, 0)
-        room:setPlayerMark(p, FREE_TIMES, 0)
-      end
-    end
-  end,
-})
-
 -- 测试1：其他角色首次造成伤害 → 可选发动一次狂言 + 挂"必须包含你"标记
 j_xuyou_jugong:addTest(function(room, me)
   local comp2 = room.players[2]
   local comp3 = room.players[3]
   FkTest.runInRoom(function()
     room:handleAddLoseSkills(me, { j_xuyou_jugong.name, KUANGYAN })
-    room:handleAddLoseSkills(comp2, "j_xuyou_kuangyan")
     me.hp = me.maxHp
     comp3.hp = comp3.maxHp
   end)
   FkTest.runInRoom(function()
-    -- 让狂言处于阳形态；狂言技能挂在许攸身上（测试用）
     room:handleAddLoseSkills(me, KUANGYAN)
     table.shuffle(room.draw_pile)
     FkTest.setNextReplies(me, { "1" })
     local hp = me.hp
     room:damage{ from = comp2, to = comp3, damage = 1, damageType = fk.NormalDamage }
-    lu.assertEquals(me:getMark("j_xuyou_jugong_used"), 1, "倨功应记录本回合已发动")
+    lu.assertEquals(me:getMark("j_xuyou_jugong_used-turn"), 1, "倨功应记录本回合已发动")
     lu.assertTrue(comp2:getMark(MUST) > 0, "造成伤害的角色应被标记")
     lu.assertTrue(comp2:getMark(FREE_DIST) > 0, "应获得无距离限制")
     lu.assertTrue(comp2:getMark(FREE_TIMES) > 0, "应获得无次数限制")
@@ -232,18 +242,120 @@ j_xuyou_jugong:addTest(function(room, me)
   end)
 end)
 
--- 测试3：回合结束清理一次性状态
+-- 测试3：取消发动后本回合仍可再次触发（不会因为误点取消而整回合报废）
+j_xuyou_jugong:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, { j_xuyou_jugong.name, KUANGYAN })
+    me.hp = me.maxHp
+    comp3.hp = comp3.maxHp
+    room:setPlayerMark(me, USED, 0)
+    room:setPlayerMark(comp2, FIRST_DMG, 0)
+  end)
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "" })   -- AskForSkillInvoke 的取消回复是空串
+    room:damage{ from = comp2, to = comp3, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(me:getMark(USED), 0, "取消后不应记录为已发动")
+    lu.assertEquals(comp2:getMark(FIRST_DMG), 0, "取消后不应占用本回合的首次名额")
+    lu.assertEquals(comp2:getMark(MUST), 0, "取消后不应挂标记")
+
+    -- 同一回合内再次造成伤害，仍应可以发动
+    FkTest.setNextReplies(me, { "1" })
+    room:damage{ from = comp2, to = comp3, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(me:getMark(USED), 1, "再次触发时应能发动")
+    lu.assertTrue(comp2:getMark(MUST) > 0, "应挂上必须包含标记")
+  end)
+end)
+
+-- 测试4：-turn 标记由引擎自动清理（不依赖自建 TurnEnd 效果）
 j_xuyou_jugong:addTest(function(room, me)
   local comp2 = room.players[2]
   FkTest.runInRoom(function()
     room:handleAddLoseSkills(me, j_xuyou_jugong.name)
-    room:setPlayerMark(me, "j_xuyou_jugong_used", 1)
+    room:setPlayerMark(me, USED, 1)
+    room:setPlayerMark(comp2, FIRST_DMG, 1)
+    lu.assertEquals(me:getMark(USED), 1, "前置")
+    -- 引擎的阶段性清理（回合开始/结束都会调）
+    room:clearHistory(Player.HistoryTurn)
+    lu.assertEquals(me:getMark(USED), 0, "回合结束后本回合发动记录应被清理")
+    lu.assertEquals(comp2:getMark(FIRST_DMG), 0, "回合结束后首次记录应被清理")
+  end)
+end)
+
+-- 测试5：真实对局路径（room.current = 其他角色）+ 狂言确实执行
+j_xuyou_jugong:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, { j_xuyou_jugong.name, KUANGYAN })
+    room.current = comp2            -- 关键：模拟"其他角色的回合"
+    me.phase = Player.Idle
+    me.hp = me.maxHp
+    comp3.hp = comp3.maxHp
+    room:setPlayerMark(me, MarkEnum.SwithSkillPreName .. KUANGYAN, 0)  -- 阳
+    table.shuffle(room.draw_pile)
+    -- 清空许攸手牌，只留 1 张【杀】 → 阳形态必然要继续摸牌
+    for _, id in ipairs(me:getCardIds("h")) do
+      room:moveCardTo(id, Card.DiscardPile, nil, fk.ReasonDiscard, "test")
+    end
+    local c = room:printCard("slash", Card.Spade, 3)
+    room:obtainCard(me, { c.id }, true, fk.ReasonDraw, me, "test")
+  end)
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1" })
+    local before = #me:getCardIds("h")
+    room:damage { from = comp2, to = comp3, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(me:getMark(USED), 1, "应已发动倨功")
+    lu.assertTrue(comp2:getMark(MUST) > 0, "应挂必须包含标记")
+    lu.assertTrue(#me:getCardIds("h") > before,
+      "狂言阳形态应摸牌（before=" .. before .. ", after=" .. #me:getCardIds("h") .. "）")
+    lu.assertEquals(me:getSwitchSkillState(KUANGYAN), fk.SwitchYin,
+      "发动一次狂言后形态应翻转为阴")
+  end)
+end)
+
+-- 测试6：真实 room:useCard 路径下，目标被强制加入许攸
+j_xuyou_jugong:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, { j_xuyou_jugong.name, KUANGYAN })
+    room.current = comp2
+    me.hp = me.maxHp
+    comp3.hp = comp3.maxHp
+    comp2.hp = comp2.maxHp
     room:setPlayerMark(comp2, MUST, 1)
   end)
   FkTest.runInRoom(function()
-    room.logic:trigger(fk.TurnEnd, comp2, {})
-    lu.assertEquals(me:getMark("j_xuyou_jugong_used"), 0, "回合结束应清空本回合发动记录")
-    lu.assertEquals(comp2:getMark(MUST), 0, "回合结束应清空标记")
+    local card = room:printCard("slash", Card.Spade, 7)
+    local use = { from = comp2, tos = { comp3 }, card = card }
+    -- comp3 不出【闪】；受 1 点伤害不影响后续断言
+    FkTest.setNextReplies(comp3, { "" })
+    room:useCard(use)
+    lu.assertTrue(table.contains(use.tos or {}, me),
+      "真实出牌时许攸应被强制加入目标，实际目标数=" .. #(use.tos or {}))
+    lu.assertEquals(comp2:getMark(MUST), 0, "使用后应清除标记")
+  end)
+end)
+
+-- 测试7：其他角色"获得牌"（真实摸牌）也能触发
+j_xuyou_jugong:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, { j_xuyou_jugong.name, KUANGYAN })
+    room.current = comp2
+    me.phase = Player.Idle
+    me.hp = me.maxHp
+    room:setPlayerMark(me, USED, 0)
+    room:setPlayerMark(comp2, FIRST_GAIN, 0)
+    table.shuffle(room.draw_pile)
+  end)
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1" })
+    comp2:drawCards(1, "test")
+    lu.assertEquals(me:getMark(USED), 1, "其他角色摸牌应能触发倨功")
+    lu.assertTrue(comp2:getMark(MUST) > 0, "摸牌的角色应被挂上标记")
   end)
 end)
 
