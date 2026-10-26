@@ -58,6 +58,20 @@ Fk:loadTranslationTable{
   ["~ji_xunyou"] = "谋事在人……成事在天……",
 }
 
+-- 计许攸 3/4（狂言遭戮）
+General:new(extension, "ji_xuyou", "wei", 3, 4):addSkills {
+  "j_xuyou_kuangyan", "j_xuyou_jugong", "j_xuyou_jince",
+}
+Fk:loadTranslationTable{
+  ["ji_xuyou"] = "计许攸",
+  ["#ji_xuyou"] = "狂言遭戮",
+  ["designer:ji_xuyou"] = "袁焉",
+  ["illustrator:ji_xuyou"] = "豆包AI",
+  ["cv:ji_xuyou"] = "佚名",
+
+  ["~ji_xuyou"] = "恃功而骄……终至杀身……",
+}
+
 General:new(extension, "ji_luxun", "wu", 3, 3):addSkills { "j_lianying", "j_jizhi", "j_qianxun", "j_zhanhuo" }
 Fk:loadTranslationTable{
   ["ji_luxun"] = "计陆逊",
@@ -324,14 +338,17 @@ Fk:loadTranslationTable{
   ["~ji_zhugeliang"] = "出师未捷身先死，长使英雄泪满襟……",
 }
 
--- 计司马昭 皮肤
+-- 计司马昭、计许攸 皮肤
 extension:addSkinPackage{
   content = {
     { enabled_generals = { "ji_simazhao" }, skins = { "ji_simazhao_skin1" } },
+    { enabled_generals = { "ji_xuyou" }, skins = { "ji_xuyou_skin1", "ji_xuyou_skin2" } },
   },
 }
 Fk:loadTranslationTable{
   ["$ji_simazhao_skin1"] = "昭心·魏祚将移",
+  ["$ji_xuyou_skin1"] = "焚策·乌巢夜火",
+  ["$ji_xuyou_skin2"] = "傲雪·孤谏",
 }
 
 return extension
