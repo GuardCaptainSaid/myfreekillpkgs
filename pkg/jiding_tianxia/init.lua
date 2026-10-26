@@ -352,6 +352,20 @@ Fk:loadTranslationTable{
   ["~ji_zhugeliang"] = "出师未捷身先死，长使英雄泪满襟……",
 }
 
+-- 计国渊 3/4（循簿勘实）
+General:new(extension, "ji_guoyuan", "wei", 3, 4):addSkills {
+  "j_guoyuan_zhengsheng", "j_guoyuan_jitian", "j_guoyuan_fangwen",
+}
+Fk:loadTranslationTable{
+  ["ji_guoyuan"] = "计国渊",
+  ["#ji_guoyuan"] = "循簿勘实",
+  ["designer:ji_guoyuan"] = "袁焉",
+  ["illustrator:ji_guoyuan"] = "豆包AI",
+  ["cv:ji_guoyuan"] = "佚名",
+
+  ["~ji_guoyuan"] = "簿书未竟，而身已远矣……",
+}
+
 -- 计司马昭、计许攸 皮肤
 extension:addSkinPackage{
   content = {
