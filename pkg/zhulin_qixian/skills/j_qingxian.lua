@@ -8,8 +8,8 @@ Fk:loadTranslationTable{
 
   ["#j_qingxian-target"] = "清弦：选择一名角色执行一项",
   ["#j_qingxian-choice"] = "清弦：选择令其执行的一项",
-  ["j_qingxian:lose"] = "失去1点体力，随机使用一张装备牌",
-  ["j_qingxian:recover"] = "回复1点体力，弃置一张装备牌",
+  ["j_qingxian__lose"] = "失去1点体力，随机使用一张装备牌",
+  ["j_qingxian__recover"] = "回复1点体力，弃置一张装备牌",
 
   ["$j_qingxian1"] = "清音入云，弦动九州。",
   ["$j_qingxian2"] = "琴声所至，余韵不绝。",
@@ -44,12 +44,12 @@ end
 -- 令目标执行二选一，若所涉牌为梅花则嵇康回复1点体力
 local function doQingxian(room, player, target, skillName)
   local choice = room:askToChoice(target, {
-    choices = { "j_qingxian:lose", "j_qingxian:recover" },
+    choices = { "j_qingxian__lose", "j_qingxian__recover" },
     skill_name = skillName,
     prompt = "#j_qingxian-choice",
   })
   local usedCard
-  if choice == "j_qingxian:lose" then
+  if choice == "j_qingxian__lose" then
     room:loseHp(target, 1, skillName, player)
     if not target.dead then
       usedCard = randomEquipUse(room, target, skillName)
@@ -134,7 +134,7 @@ j_qingxian:addTest(function(room, me)
     local hp_before = comp2.hp
     local eq_before = #comp2:getCardIds("e")
 
-    FkTest.setNextReplies(comp2, { { "j_qingxian:lose" } })
+    FkTest.setNextReplies(comp2, { { "j_qingxian__lose" } })
     local dmg = DamageData:new{ from = comp2, to = me, damage = 1, damageType = fk.NormalDamage }
     room.logic:trigger(fk.DamageInflicted, comp2, dmg)
     room.logic:trigger(fk.Damage, comp2, dmg)
@@ -162,7 +162,7 @@ j_qingxian:addTest(function(room, me)
     local hp_before = comp2.hp
     local eq_before = #comp2:getCardIds("e")
     FkTest.setNextReplies(me, { FkTest.ReplyChoosePlayer({ comp2 }) })
-    FkTest.setNextReplies(comp2, { { "j_qingxian:recover" } })
+    FkTest.setNextReplies(comp2, { { "j_qingxian__recover" } })
     room:recover{ who = me, num = 1, recoverBy = comp2, skillName = "test" }
 
     lu.assertEquals(comp2.hp, hp_before + 1, "清弦：目标应回复1点体力")

@@ -421,7 +421,7 @@ j_xuyou_jugong:addTest(function(room, me)
     room.askToChoice = function(self, who, params)
       if params.skill_name == KUANGYAN then
         asked = asked + 1
-        return "j_xuyou_kuangyan:basic"
+        return "j_xuyou_kuangyan__basic"
       end
       return origChoice(self, who, params)
     end

@@ -9,10 +9,10 @@ Fk:loadTranslationTable{
   ["#j_yanshi-draw"] = "演势：选择从牌堆顶或牌堆底摸一张牌",
   ["#j_yanshi-use"] = "演势：你可以使用摸到的牌",
   ["#j_yanshi-forced"] = "演势：摸到的牌当前无法使用，你可以弃置此牌并视为使用，此技能视为未发动过",
-  ["j_yanshi:top"] = "牌堆顶",
-  ["j_yanshi:bottom"] = "牌堆底",
-  ["j_yanshi:force"] = "弃置并视为使用",
-  ["j_yanshi:abandon"] = "放弃",
+  ["j_yanshi__top"] = "牌堆顶",
+  ["j_yanshi__bottom"] = "牌堆底",
+  ["j_yanshi__force"] = "弃置并视为使用",
+  ["j_yanshi__abandon"] = "放弃",
 
   ["$j_yanshi1"] = "卧龙待时，一鸣惊人！",
   ["$j_yanshi2"] = "静观其变，乘势而起！",
@@ -31,11 +31,11 @@ j_yanshi:addEffect("active", {
     -- 标记已发动（若使用摸到的牌则视为未发动）
     room:setPlayerMark(player, "j_yanshi_used", 1)
     local choice = room:askToChoice(player, {
-      choices = { "j_yanshi:top", "j_yanshi:bottom" },
+      choices = { "j_yanshi__top", "j_yanshi__bottom" },
       skill_name = j_yanshi.name,
       prompt = "#j_yanshi-draw",
     })
-    local fromPlace = choice == "j_yanshi:bottom" and "bottom" or "top"
+    local fromPlace = choice == "j_yanshi__bottom" and "bottom" or "top"
 
     -- 摸一张（drawCards 返回摸到的牌 id）
     local ids = player:drawCards(1, j_yanshi.name, fromPlace)
@@ -59,11 +59,11 @@ j_yanshi:addEffect("active", {
       -- 摸到的牌当前无法主动使用（满血桃、无合法目标的借刀、判定区已满的闪电等）：
       -- 提供"视为使用"选项，弃置摸到的牌并视为已使用，技能流程不会断掉
       local forced = room:askToChoice(player, {
-        choices = { "j_yanshi:force", "j_yanshi:abandon" },
+        choices = { "j_yanshi__force", "j_yanshi__abandon" },
         skill_name = j_yanshi.name,
         prompt = "#j_yanshi-forced",
       })
-      if forced == "j_yanshi:force" then
+      if forced == "j_yanshi__force" then
         room:throwCard(drawnId, j_yanshi.name, player, player)
         room:setPlayerMark(player, "j_yanshi_used", 0)
       end
@@ -149,7 +149,7 @@ j_yanshi:addTest(function(room, me)
 
   -- 场景B：摸牌后不使用 → 限次消耗
   FkTest.runInRoom(function()
-    FkTest.setNextReplies(me, { "j_yanshi:bottom" })
+    FkTest.setNextReplies(me, { "j_yanshi__bottom" })
     -- 直接执行 active 效果：手动触发 onUse
     local skel = Fk.skills[j_yanshi.name]:getSkeleton()
     local eff = skel.effects[1]
@@ -174,7 +174,7 @@ j_yanshi:addTest(function(room, me)
   FkTest.runInRoom(function()
     local handBefore = #me:getCardIds("h")
     -- 回复：选"牌堆顶"；askToUseCard 选择摸到的无中生有使用
-    FkTest.setNextReplies(me, { "j_yanshi:top", FkTest.ReplyCard(c, {}) })
+    FkTest.setNextReplies(me, { "j_yanshi__top", FkTest.ReplyCard(c, {}) })
     local skel = Fk.skills[j_yanshi.name]:getSkeleton()
     local eff = skel.effects[1]
     eff:onUse(room, { from = me })
@@ -197,7 +197,7 @@ j_yanshi:addTest(function(room, me)
     room:moveCards{ ids = { peach.id }, toArea = Card.DrawPile, moveReason = fk.ReasonPut, drawPilePosition = 1 }
   end)
   FkTest.runInRoom(function()
-    FkTest.setNextReplies(me, { "j_yanshi:top", "j_yanshi:force" })
+    FkTest.setNextReplies(me, { "j_yanshi__top", "j_yanshi__force" })
     local skel = Fk.skills[j_yanshi.name]:getSkeleton()
     local eff = skel.effects[1]
     eff:onUse(room, { from = me })
@@ -217,7 +217,7 @@ j_yanshi:addTest(function(room, me)
     room:moveCards{ ids = { jink.id }, toArea = Card.DrawPile, moveReason = fk.ReasonPut, drawPilePosition = 1 }
   end)
   FkTest.runInRoom(function()
-    FkTest.setNextReplies(me, { "j_yanshi:top", FkTest.ReplyCard(Fk:getCardById(jinkId), {}) })
+    FkTest.setNextReplies(me, { "j_yanshi__top", FkTest.ReplyCard(Fk:getCardById(jinkId), {}) })
     local skel = Fk.skills[j_yanshi.name]:getSkeleton()
     local eff = skel.effects[1]
     eff:onUse(room, { from = me })
@@ -242,7 +242,7 @@ j_yanshi:addTest(function(room, me)
     me:addCardUseHistory("slash", 1)
     lu.assertEquals(me:usedCardTimes("slash", Player.HistoryPhase), 1, "前置：本回合已用1杀")
     -- 摸排到杀并使用（指定 comp2）
-    FkTest.setNextReplies(me, { "j_yanshi:top", FkTest.ReplyCard(Fk:getCardById(slashId), { comp2 }) })
+    FkTest.setNextReplies(me, { "j_yanshi__top", FkTest.ReplyCard(Fk:getCardById(slashId), { comp2 }) })
     local skel = Fk.skills[j_yanshi.name]:getSkeleton()
     local eff = skel.effects[1]
     eff:onUse(room, { from = me })

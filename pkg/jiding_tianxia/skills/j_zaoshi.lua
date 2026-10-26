@@ -10,8 +10,8 @@ Fk:loadTranslationTable{
   ["#j_zaoshi-choose"] = "造势：选择一张手牌置于牌堆",
   ["#j_zaoshi-place"] = "造势：置于牌堆顶或牌堆底",
   ["#j_zaoshi-draw"] = "造势：从牌堆顶或牌堆底摸一张牌",
-  ["j_zaoshi:top"] = "牌堆顶",
-  ["j_zaoshi:bottom"] = "牌堆底",
+  ["j_zaoshi__top"] = "牌堆顶",
+  ["j_zaoshi__bottom"] = "牌堆底",
 
   ["$j_zaoshi1"] = "虚实相生，攻守易势。",
   ["$j_zaoshi2"] = "造势而动，以静制动！",
@@ -83,7 +83,7 @@ j_zaoshi:addTest(function(room, me)
     local trick = room:printCard("indulgence", Card.Heart, 3)
     room:obtainCard(comp2, { trick }, true, fk.ReasonDraw, comp2, "test")
     local choose = me:getCardIds("h")[1]
-    FkTest.setNextReplies(me, { "1", choose, { "j_zaoshi:top" }, { "j_zaoshi:bottom" } })
+    FkTest.setNextReplies(me, { "1", choose, { "j_zaoshi__top" }, { "j_zaoshi__bottom" } })
     local pileBefore = #room.draw_pile
     local handBefore = #me:getCardIds("h")
     room:useCard{ from = comp2, card = trick, tos = { me } }
@@ -108,8 +108,8 @@ j_zaoshi:addTest(function(room, me)
     local choose = hand[1]
     local before = #me:getCardIds("h")
     local pileBefore = #room.draw_pile
-    -- 回复格式：invoke="1"（裸串）、AskForCardChosen=裸id、两次AskForChoices=["j_zaoshi:top"/"j_zaoshi:bottom"]
-    FkTest.setNextReplies(me, { "1", choose, { "j_zaoshi:top" }, { "j_zaoshi:bottom" } })
+    -- 回复格式：invoke="1"（裸串）、AskForCardChosen=裸id、两次AskForChoices=["j_zaoshi__top"/"j_zaoshi__bottom"]
+    FkTest.setNextReplies(me, { "1", choose, { "j_zaoshi__top" }, { "j_zaoshi__bottom" } })
     local slash = Fk:cloneCard("slash")
     -- 构造真实 AimData（aimStruct）结构：tos 是 AimGroup
     local use = UseCardData:new{ from = comp2, card = slash, tos = { me } }

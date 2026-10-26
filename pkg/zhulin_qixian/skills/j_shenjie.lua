@@ -10,8 +10,8 @@ Fk:loadTranslationTable{
 
   ["#j_shenjie-invoke"] = "神解：是否改为亮出牌堆顶5张牌并获得类型不同的牌各一张？",
   ["#j_shenjie-choice"] = "神解：令一名角色回复或流失一点体力",
-  ["j_shenjie:recover"] = "回复一点体力",
-  ["j_shenjie:lose"] = "流失一点体力",
+  ["j_shenjie__recover"] = "回复一点体力",
+  ["j_shenjie__lose"] = "流失一点体力",
   ["#j_shenjie-target"] = "神解：选择一名角色",
 
   ["$j_shenjie1"] = "神解音律，妙悟天机。",
@@ -50,7 +50,7 @@ j_shenjie:addEffect(fk.EventPhaseStart, {
     if #gained == 1 then
       -- 仅获得一张牌：令一名角色回复或流失一点体力
       local choice = room:askToChoice(player, {
-        choices = { "j_shenjie:recover", "j_shenjie:lose" },
+        choices = { "j_shenjie__recover", "j_shenjie__lose" },
         skill_name = j_shenjie.name,
         prompt = "#j_shenjie-choice",
       })
@@ -65,7 +65,7 @@ j_shenjie:addEffect(fk.EventPhaseStart, {
         prompt = "#j_shenjie-target",
       })[1]
       if not t then return end
-      if choice == "j_shenjie:lose" then
+      if choice == "j_shenjie__lose" then
         room:loseHp(t, 1, j_shenjie.name, player)
       else
         room:recover{ who = t, num = 1, recoverBy = player, skillName = j_shenjie.name }
@@ -169,7 +169,7 @@ j_shenjie:addTest(function(room, me)
 
   FkTest.runInRoom(function()
     local compHpBefore = comp2.hp
-    FkTest.setNextReplies(me, { "1", { "j_shenjie:lose" }, FkTest.ReplyChoosePlayer({ comp2 }) })
+    FkTest.setNextReplies(me, { "1", { "j_shenjie__lose" }, FkTest.ReplyChoosePlayer({ comp2 }) })
     room.logic:trigger(fk.EventPhaseStart, me, { from = Player.Discard, to = Player.Draw })
     lu.assertEquals(comp2.hp, compHpBefore - 1, "神解：仅获一张时目标应流失1点体力")
   end)

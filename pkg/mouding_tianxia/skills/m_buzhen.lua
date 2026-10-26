@@ -9,11 +9,11 @@ Fk:loadTranslationTable{
   ["#m_buzhen-invoke"] = "布阵：弃置所有区域内的牌，展示牌堆底的牌",
   ["#m_buzhen-place::"] = "布阵：选择 %arg 的处理方式",
   ["#m_buzhen-reset"] = "布阵：你造成了伤害，可以重置武将牌",
-  ["m_buzhen:use"] = "使用",
-  ["m_buzhen:equip"] = "置于装备区",
-  ["m_buzhen:judge"] = "置于判定区",
-  ["m_buzhen:top"] = "置牌堆顶",
-  ["m_buzhen:bottom"] = "置牌堆底",
+  ["m_buzhen__use"] = "使用",
+  ["m_buzhen__equip"] = "置于装备区",
+  ["m_buzhen__judge"] = "置于判定区",
+  ["m_buzhen__top"] = "置牌堆顶",
+  ["m_buzhen__bottom"] = "置牌堆底",
   ["$m_buzhen1"] = "八阵图成，万夫莫开！",
   ["$m_buzhen2"] = "布阵以待，静候敌来！",
 }
@@ -92,26 +92,26 @@ local function buzhen(player)
     local card = Fk:getCardById(id)
     if card.type == Card.TypeEquip then
       local choice = room:askToChoice(player, {
-        choices = { "m_buzhen:equip", "m_buzhen:top", "m_buzhen:bottom" },
+        choices = { "m_buzhen__equip", "m_buzhen__top", "m_buzhen__bottom" },
         skill_name = m_buzhen.name,
         prompt = "#m_buzhen-place::" .. id,
       })
-      if choice == "m_buzhen:equip" then
+      if choice == "m_buzhen__equip" then
         room:moveCardTo(id, Card.PlayerEquip, player, fk.ReasonPut, m_buzhen.name)
-      elseif choice == "m_buzhen:bottom" then
+      elseif choice == "m_buzhen__bottom" then
         placeToBottom(room, player, id)
       else
         placeToTop(room, player, id)
       end
     elseif card.sub_type == Card.SubtypeDelayedTrick then
       local choice = room:askToChoice(player, {
-        choices = { "m_buzhen:judge", "m_buzhen:top", "m_buzhen:bottom" },
+        choices = { "m_buzhen__judge", "m_buzhen__top", "m_buzhen__bottom" },
         skill_name = m_buzhen.name,
         prompt = "#m_buzhen-place::" .. id,
       })
-      if choice == "m_buzhen:judge" then
+      if choice == "m_buzhen__judge" then
         room:moveCardTo(id, Card.PlayerJudge, player, fk.ReasonPut, m_buzhen.name)
-      elseif choice == "m_buzhen:bottom" then
+      elseif choice == "m_buzhen__bottom" then
         placeToBottom(room, player, id)
       else
         placeToTop(room, player, id)
@@ -121,14 +121,14 @@ local function buzhen(player)
       local targets = table.filter(room.alive_players, function(p)
         return player:canUseTo(card, p)
       end)
-      local choices = { "m_buzhen:top", "m_buzhen:bottom" }
-      if #targets > 0 then table.insert(choices, 1, "m_buzhen:use") end
+      local choices = { "m_buzhen__top", "m_buzhen__bottom" }
+      if #targets > 0 then table.insert(choices, 1, "m_buzhen__use") end
       local choice = room:askToChoice(player, {
         choices = choices,
         skill_name = m_buzhen.name,
         prompt = "#m_buzhen-place::" .. id,
       })
-      if choice == "m_buzhen:use" then
+      if choice == "m_buzhen__use" then
         local tos = room:askToChoosePlayers(player, {
           targets = targets,
           min_num = 1,
@@ -137,7 +137,7 @@ local function buzhen(player)
           prompt = "#m_buzhen-place::" .. id,
         })
         room:useCard{ from = player, tos = tos, card = card, skillName = m_buzhen.name }
-      elseif choice == "m_buzhen:bottom" then
+      elseif choice == "m_buzhen__bottom" then
         placeToBottom(room, player, id)
       else
         placeToTop(room, player, id)
@@ -221,7 +221,7 @@ m_buzhen:addTest(function(room, me)
     -- c1/c2 是基本牌自动获得；c3 是锦囊（可对 comp2 使用）→ 选"使用"
     FkTest.setNextReplies(me, {
       "1", -- 发动布阵
-      "m_buzhen:use", -- c3 使用
+      "m_buzhen__use", -- c3 使用
       FkTest.ReplyChoosePlayer({ comp2 }),
       "", -- 重置询问：取消
     })
@@ -252,7 +252,7 @@ m_buzhen:addTest(function(room, me)
   FkTest.runInRoom(function()
     FkTest.setNextReplies(me, {
       "1",
-      "m_buzhen:bottom", -- 置牌堆底
+      "m_buzhen__bottom", -- 置牌堆底
       "", -- 重置询问取消
     })
     local tdata = { who = me, reason = "game_rule" }

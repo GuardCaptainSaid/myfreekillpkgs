@@ -10,8 +10,8 @@ Fk:loadTranslationTable{
   ["#j_zishi-choice"] = "谘势：选择一项",
   ["#j_zishi-extra"] = "谘势：令 %src 额外指定一个目标",
   ["#j_zishi-discard"] = "谘势：弃置一张牌，令其本回合无法使用同类型牌",
-  ["j_zishi:extra"] = "令其额外指定一个目标（伤害牌则伤害+1）",
-  ["j_zishi:forbid"] = "弃一张牌，令其本回合无法使用同类型牌",
+  ["j_zishi__extra"] = "令其额外指定一个目标（伤害牌则伤害+1）",
+  ["j_zishi__forbid"] = "弃一张牌，令其本回合无法使用同类型牌",
   ["$j_zishi1"] = "咨诹善道，察纳雅言。",
   ["$j_zishi2"] = "博采众议，以定大计！",
 }
@@ -57,14 +57,14 @@ j_zishi:addEffect(fk.CardUsing, {
       end)
     end
     local choices = {}
-    if #extraTargets > 0 then table.insert(choices, "j_zishi:extra") end
-    table.insert(choices, "j_zishi:forbid")
+    if #extraTargets > 0 then table.insert(choices, "j_zishi__extra") end
+    table.insert(choices, "j_zishi__forbid")
     local choice = room:askToChoice(player, {
       choices = choices,
       skill_name = j_zishi.name,
       prompt = "#j_zishi-choice::" .. data.from.id,
     })
-    if choice == "j_zishi:extra" then
+    if choice == "j_zishi__extra" then
       local t = room:askToChoosePlayers(data.from, {
         targets = extraTargets,
         min_num = 1,
@@ -161,7 +161,7 @@ j_zishi:addTest(function(room, me)
     local slash = Fk:cloneCard("slash")
     slash.skillName = j_zishi.name -- 转化杀
     -- askToChoice 的回复为数组包装；askToSkillInvoke 为 "1"
-    FkTest.setNextReplies(me, { "1", { "j_zishi:extra" } })
+    FkTest.setNextReplies(me, { "1", { "j_zishi__extra" } })
     FkTest.setNextReplies(comp2, { FkTest.ReplyChoosePlayer({ comp3 }) })
     local use = UseCardData:new{ from = comp2, card = slash, tos = { me } }
     room.logic:trigger(fk.CardUsing, comp2, use)
@@ -187,7 +187,7 @@ j_zishi:addTest(function(room, me)
     local trick = Fk:cloneCard("ex_nihilo")
     trick.skillName = "w_jizhi" -- 转化牌
     -- data.tos 需非空，使"额外目标"选项出现（否则 askToChoice 不发询问直接返回）
-    FkTest.setNextReplies(me, { "1", { "j_zishi:forbid" }, FkTest.ReplyDiscard({ c1.id }) })
+    FkTest.setNextReplies(me, { "1", { "j_zishi__forbid" }, FkTest.ReplyDiscard({ c1.id }) })
     local use = UseCardData:new{ from = comp2, card = trick, tos = { me } }
     room.logic:trigger(fk.CardUsing, comp2, use)
     local forbid_type = comp2:getMark("j_zishi_forbid")

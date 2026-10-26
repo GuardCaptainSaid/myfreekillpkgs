@@ -11,10 +11,10 @@ local SUIT_MARKS = {
   [Card.Club] = "@j_taowu_c",
 }
 local SUIT_KEYS = {
-  [Card.Spade] = "j_taowu:spade",
-  [Card.Heart] = "j_taowu:heart",
-  [Card.Diamond] = "j_taowu:diamond",
-  [Card.Club] = "j_taowu:club",
+  [Card.Spade] = "j_taowu__spade",
+  [Card.Heart] = "j_taowu__heart",
+  [Card.Diamond] = "j_taowu__diamond",
+  [Card.Club] = "j_taowu__club",
 }
 local SUIT_ORDER = { Card.Spade, Card.Heart, Card.Diamond, Card.Club }
 
@@ -25,12 +25,12 @@ Fk:loadTranslationTable{
   ["#j_taowu-suit"] = "陶兀：选择要弃置的手牌花色",
   ["#j_taowu-kind"] = "陶兀：视为使用一张【酒】或【杀】",
   ["#j_taowu-slash"] = "陶兀：选择此【杀】的目标",
-  ["j_taowu:spade"] = "黑桃",
-  ["j_taowu:heart"] = "红桃",
-  ["j_taowu:diamond"] = "方块",
-  ["j_taowu:club"] = "梅花",
-  ["j_taowu:analeptic"] = "酒",
-  ["j_taowu:slash"] = "杀",
+  ["j_taowu__spade"] = "黑桃",
+  ["j_taowu__heart"] = "红桃",
+  ["j_taowu__diamond"] = "方块",
+  ["j_taowu__club"] = "梅花",
+  ["j_taowu__analeptic"] = "酒",
+  ["j_taowu__slash"] = "杀",
 
   ["$j_taowu1"] = "天地为席，醉卧乾坤。",
   ["$j_taowu2"] = "杯酒在手，万事皆休。",
@@ -83,12 +83,12 @@ j_taowu:addEffect("active", {
     room:throwCard(discardIds, j_taowu.name, player, player)
     -- 选择视为【酒】或【杀】
     local kind = room:askToChoice(player, {
-      choices = { "j_taowu:analeptic", "j_taowu:slash" },
+      choices = { "j_taowu__analeptic", "j_taowu__slash" },
       skill_name = j_taowu.name,
       prompt = "#j_taowu-kind",
     })
     local card
-    if kind == "j_taowu:analeptic" then
+    if kind == "j_taowu__analeptic" then
       card = Fk:cloneCard("analeptic")
     else
       card = Fk:cloneCard("slash")
@@ -133,7 +133,7 @@ j_taowu:addTest(function(room, me)
     room.current = me
     me.phase = Player.Play
     local handBefore = #me:getCardIds("h")
-    FkTest.setNextReplies(me, { { "j_taowu:spade" }, { "j_taowu:analeptic" } })
+    FkTest.setNextReplies(me, { { "j_taowu__spade" }, { "j_taowu__analeptic" } })
     local sk = Fk.skills[j_taowu.name]
     room:useSkill(me, sk, function()
       sk:onUse(room, { from = me, tos = {}, cards = {} })
@@ -167,7 +167,7 @@ j_taowu:addTest(function(room, me)
       room:throwCard(comp2:getCardIds("h"), "test", comp2, comp2)
     end
     local hpBefore = comp2.hp
-    FkTest.setNextReplies(me, { { "j_taowu:heart" }, { "j_taowu:slash" }, FkTest.ReplyChoosePlayer({ comp2 }) })
+    FkTest.setNextReplies(me, { { "j_taowu__heart" }, { "j_taowu__slash" }, FkTest.ReplyChoosePlayer({ comp2 }) })
     local sk = Fk.skills[j_taowu.name]
     room:useSkill(me, sk, function()
       sk:onUse(room, { from = me, tos = {}, cards = {} })

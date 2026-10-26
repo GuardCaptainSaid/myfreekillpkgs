@@ -65,7 +65,7 @@ j_zhongxiao:addTest(function(room, me)
     local before = #hand
     local trick = Fk:cloneCard("dismantlement")
     local use = UseCardData:new{ from = comp2, card = trick, tos = { me } }
-    FkTest.setNextReplies(me, { "1", { hand[1], hand[2], hand[3] }, { "j_jiance:draw" } })
+    FkTest.setNextReplies(me, { "1", { hand[1], hand[2], hand[3] }, { "j_jiance__draw" } })
     room.logic:trigger(fk.CardUsing, comp2, use)
     lu.assertEquals(#me:getCardIds("h"), before - 3 + 2, "未发动忠孝时谏策应弃3张")
   end)
@@ -84,7 +84,7 @@ j_zhongxiao:addTest(function(room, me)
     local before = #hand
     local trick = Fk:cloneCard("dismantlement")
     local use = UseCardData:new{ from = comp2, card = trick, tos = { me } }
-    FkTest.setNextReplies(me, { "1", { hand[1], hand[2], hand[3], hand[4] }, { "j_jiance:draw" } })
+    FkTest.setNextReplies(me, { "1", { hand[1], hand[2], hand[3], hand[4] }, { "j_jiance__draw" } })
     room.logic:trigger(fk.CardUsing, comp2, use)
     lu.assertEquals(#me:getCardIds("h"), before - 4 + 2, "发动忠孝后谏策应弃4张")
   end)

@@ -13,8 +13,8 @@ Fk:loadTranslationTable{
   ["#j_hengzheng-yin"] = "衡政：弃一张与 %src 所用牌颜色相同的手牌",
   ["#j_hengzheng-discard"] = "衡政：弃置一张颜色相同的手牌",
   ["#j_hengzheng-choice"] = "衡政：选择一项",
-  ["j_hengzheng:slash"] = "视为其对汝使用一张【杀】",
-  ["j_hengzheng:nullify"] = "此牌无效，令其摸一张牌",
+  ["j_hengzheng__slash"] = "视为其对汝使用一张【杀】",
+  ["j_hengzheng__nullify"] = "此牌无效，令其摸一张牌",
   ["$j_hengzheng1"] = "权衡利弊，政通人和。",
   ["$j_hengzheng2"] = "阴阳相济，虚实难测！",
 }
@@ -133,11 +133,11 @@ j_hengzheng:addEffect(fk.CardUsing, {
     room:throwCard(cards, j_hengzheng.name, player, player)
     -- 令使用者选择一项
     local choice = room:askToChoice(data.from, {
-      choices = { "j_hengzheng:slash", "j_hengzheng:nullify" },
+      choices = { "j_hengzheng__slash", "j_hengzheng__nullify" },
       skill_name = j_hengzheng.name,
       prompt = "#j_hengzheng-choice",
     })
-    if choice == "j_hengzheng:slash" then
+    if choice == "j_hengzheng__slash" then
       -- 视为你对其使用一张【杀】（不计入次数限制）
       local slash = Fk:cloneCard("slash")
       slash.skillName = j_hengzheng.name
@@ -201,7 +201,7 @@ j_hengzheng:addTest(function(room, me)
     local realSlash = room:printCard("slash", Card.Spade, 7)
     room:obtainCard(comp2, { realSlash }, true, fk.ReasonDraw, comp2, "test")
     FkTest.setNextReplies(me, { "1", FkTest.ReplyChooseCards({ c1.id }) })
-    FkTest.setNextReplies(comp2, { "j_hengzheng:nullify" })
+    FkTest.setNextReplies(comp2, { "j_hengzheng__nullify" })
     local use = UseCardData:new{ from = comp2, card = Fk:getCardById(realSlash.id), tos = {} }
     room.logic:trigger(fk.CardUsing, comp2, use)
     lu.assertTrue(use.nullified, "此牌应被无效")
@@ -227,7 +227,7 @@ j_hengzheng:addTest(function(room, me)
     local realSlash = room:printCard("slash", Card.Spade, 7)
     room:obtainCard(comp2, { realSlash }, true, fk.ReasonDraw, comp2, "test")
     FkTest.setNextReplies(me, { "1", FkTest.ReplyChooseCards({ c1.id }) })
-    FkTest.setNextReplies(comp2, { "j_hengzheng:slash", "" }) -- 选视为杀；comp2 无闪（桃）→ 中杀
+    FkTest.setNextReplies(comp2, { "j_hengzheng__slash", "" }) -- 选视为杀；comp2 无闪（桃）→ 中杀
     local use = UseCardData:new{ from = comp2, card = Fk:getCardById(realSlash.id), tos = {} }
     room.logic:trigger(fk.CardUsing, comp2, use)
     lu.assertFalse(use.nullified, "选杀则牌不无效")

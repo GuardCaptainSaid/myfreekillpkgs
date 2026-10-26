@@ -9,8 +9,8 @@ Fk:loadTranslationTable{
   ["#j_huaiyi-color"] = "怀异：弃置一种颜色的全部手牌",
   ["#j_huaiyi-target"] = "怀异：选择一名角色获得其牌",
   ["#j_huaiyi-get"] = "怀异：获得该角色至多 %arg 张牌",
-  ["j_huaiyi:red"] = "红色牌",
-  ["j_huaiyi:black"] = "黑色牌",
+  ["j_huaiyi__red"] = "红色牌",
+  ["j_huaiyi__black"] = "黑色牌",
 
   ["$j_huaiyi1"] = "心怀异志，岂甘人下。",
   ["$j_huaiyi2"] = "此计若成，大事可期。",
@@ -45,11 +45,11 @@ j_huaiyi:addEffect("active", {
 
     -- 两种颜色 → 选择弃置其中一种颜色的全部手牌
     local choice = room:askToChoice(player, {
-      choices = { "j_huaiyi:red", "j_huaiyi:black" },
+      choices = { "j_huaiyi__red", "j_huaiyi__black" },
       skill_name = j_huaiyi.name,
       prompt = "#j_huaiyi-color",
     })
-    local wantColor = (choice == "j_huaiyi:red") and Card.Red or Card.Black
+    local wantColor = (choice == "j_huaiyi__red") and Card.Red or Card.Black
     local toDiscard = {}
     for _, id in ipairs(hand) do
       if Fk:getCardById(id).color == wantColor then
@@ -144,7 +144,7 @@ j_huaiyi:addTest(function(room, me)
     local hpBefore = me.hp
     local compHand = comp2:getCardIds("h")
     -- 选红色弃置（红色只有1张）→ 弃1张 → X=1 → 获得至多1张 → 获得1张不失去体力
-    FkTest.setNextReplies(me, { { "j_huaiyi:red" }, FkTest.ReplyChoosePlayer({ comp2 }), { compHand[1] } })
+    FkTest.setNextReplies(me, { { "j_huaiyi__red" }, FkTest.ReplyChoosePlayer({ comp2 }), { compHand[1] } })
     local sk = Fk.skills[j_huaiyi.name]
     room:useSkill(me, sk, function()
       sk:onUse(room, { from = me, tos = {}, cards = {} })
@@ -174,7 +174,7 @@ j_huaiyi:addTest(function(room, me)
     local hpBefore = me.hp
     local compHand = comp2:getCardIds("h")
     -- 选黑色弃置（黑2张）→ 弃2张 → X=2 → 获得至多2张
-    FkTest.setNextReplies(me, { { "j_huaiyi:black" }, FkTest.ReplyChoosePlayer({ comp2 }), { compHand[1], compHand[2] } })
+    FkTest.setNextReplies(me, { { "j_huaiyi__black" }, FkTest.ReplyChoosePlayer({ comp2 }), { compHand[1], compHand[2] } })
     local sk = Fk.skills[j_huaiyi.name]
     room:useSkill(me, sk, function()
       sk:onUse(room, { from = me, tos = {}, cards = {} })

@@ -44,11 +44,11 @@ j_xunzun:addEffect("active", {
 
     -- 选择一项
     local choice = room:askToChoice(player, {
-      choices = { "j_xunzun:lose", "j_xunzun:recover" },
+      choices = { "j_xunzun__lose", "j_xunzun__recover" },
       skill_name = j_xunzun.name,
       prompt = "#j_xunzun-choice",
     })
-    if choice == "j_xunzun:lose" then
+    if choice == "j_xunzun__lose" then
       -- 1.体力值大于你的角色：流失1点体力并重铸一张牌
       local candidates = table.filter(room:getOtherPlayers(player), function(p)
         return not p.dead and p.hp > player.hp
@@ -106,8 +106,8 @@ Fk:loadTranslationTable{
 
   ["#j_xunzun-put"] = "逊尊：将一张手牌置于牌堆底",
   ["#j_xunzun-choice"] = "逊尊：选择一项",
-  ["j_xunzun:lose"] = "令一名体力值大于你的角色流失一点体力并重铸一张牌",
-  ["j_xunzun:recover"] = "令一名体力值小于等于你的角色回复一点体力并摸一张牌",
+  ["j_xunzun__lose"] = "令一名体力值大于你的角色流失一点体力并重铸一张牌",
+  ["j_xunzun__recover"] = "令一名体力值小于等于你的角色回复一点体力并摸一张牌",
   ["#j_xunzun-lose"] = "逊尊：选择一名体力值大于你的角色",
   ["#j_xunzun-recast"] = "逊尊：令其选择一张手牌重铸",
   ["#j_xunzun-recover"] = "逊尊：选择一名体力值小于等于你的角色",
@@ -145,7 +145,7 @@ j_xunzun:addTest(function(room, me)
     local compHand = comp2:getCardIds("h")
     local compHpBefore = comp2.hp
     local handBefore = #me:getCardIds("h")
-    FkTest.setNextReplies(me, { { meHand[1] }, { "j_xunzun:lose" }, FkTest.ReplyChoosePlayer({ comp2 }) })
+    FkTest.setNextReplies(me, { { meHand[1] }, { "j_xunzun__lose" }, FkTest.ReplyChoosePlayer({ comp2 }) })
     FkTest.setNextReplies(comp2, { { compHand[1] } })
     local sk = Fk.skills[j_xunzun.name]
     room:useSkill(me, sk, function()
@@ -185,7 +185,7 @@ j_xunzun:addTest(function(room, me)
     local meHand = me:getCardIds("h")
     local compHpBefore = comp2.hp
     local compHandBefore = #comp2:getCardIds("h")
-    FkTest.setNextReplies(me, { { meHand[1] }, { "j_xunzun:recover" }, FkTest.ReplyChoosePlayer({ comp2 }) })
+    FkTest.setNextReplies(me, { { meHand[1] }, { "j_xunzun__recover" }, FkTest.ReplyChoosePlayer({ comp2 }) })
     local sk = Fk.skills[j_xunzun.name]
     room:useSkill(me, sk, function()
       sk:onUse(room, { from = me, tos = {}, cards = {} })

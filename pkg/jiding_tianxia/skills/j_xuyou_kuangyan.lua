@@ -9,10 +9,16 @@ local j_xuyou_kuangyan = fk.CreateSkill {
 -- 本回合（-turn 由引擎在回合结束时自动清除）以此法摸到的牌：无距离、无次数限制
 local FREE_MARK = "j_xuyou_kuangyan_free-turn"
 
+-- 【重要】选项文本禁止带冒号！
+-- 客户端 ChoicesBox 显示选项走 Ltk.processPrompt()，实现是「先按冒号切分、只翻译第一段」
+-- （Lua.tr(str.split(":")[0])）。所以键名一旦带冒号，就会被截成技能名 j_xuyou_kuangyan
+-- → 三个选项全都显示成"狂言"，玩家根本看不出在选什么。
+-- 冒号只在 "翻译键:参数1:参数2" 这种带 %arg 的格式串里才是分隔符。
+-- 约定：选项键一律用「技能名__选项」形式（参考官方 ol_ex__tianxiang_loseHp）。
 local TYPE_CHOICES = {
-  [Card.TypeBasic] = "j_xuyou_kuangyan:basic",
-  [Card.TypeTrick] = "j_xuyou_kuangyan:trick",
-  [Card.TypeEquip] = "j_xuyou_kuangyan:equip",
+  [Card.TypeBasic] = "j_xuyou_kuangyan__basic",
+  [Card.TypeTrick] = "j_xuyou_kuangyan__trick",
+  [Card.TypeEquip] = "j_xuyou_kuangyan__equip",
 }
 
 -- 固定顺序：基本 → 锦囊 → 装备（选项顺序稳定，玩家不会因为顺序变化选错）
@@ -29,9 +35,14 @@ Fk:loadTranslationTable{
     "<font color='grey'>阳：你摸一张牌，重复此流程直到你的手牌包含三种类型，且本回合你以此法摸的牌无距离和次数限制；</font>" ..
     "<font color='#E0DB2F'>阴：你保留一种类型的牌，弃置其余牌，然后摸等量的牌。</font>",
 
-  ["j_xuyou_kuangyan:basic"] = "基本牌",
-  ["j_xuyou_kuangyan:trick"] = "锦囊牌",
-  ["j_xuyou_kuangyan:equip"] = "装备牌",
+  -- 选项文本（按钮上显示）。键名不能带冒号，见 TYPE_CHOICES 上方注释。
+  ["j_xuyou_kuangyan__basic"] = "基本牌",
+  ["j_xuyou_kuangyan__trick"] = "锦囊牌",
+  ["j_xuyou_kuangyan__equip"] = "装备牌",
+  -- 详细模式（detailed = true）右侧的说明文字，客户端取 ":" + 选项文本 作为键
+  [":j_xuyou_kuangyan__basic"] = "保留手中所有基本牌（【杀】【闪】【桃】【酒】等），弃置其余类型的牌，然后摸等量的牌",
+  [":j_xuyou_kuangyan__trick"] = "保留手中所有锦囊牌（含延时锦囊），弃置其余类型的牌，然后摸等量的牌",
+  [":j_xuyou_kuangyan__equip"] = "保留手中所有装备牌，弃置其余类型的牌，然后摸等量的牌",
 
   ["#j_xuyou_kuangyan-keep"] = "狂言：选择一种类型的牌保留，弃置其余手牌，然后摸等量的牌",
   ["#j_xuyou_kuangyan-yang"] = "狂言：摸牌直到手牌包含三种类型",
@@ -50,7 +61,7 @@ local function hasAllTypes(player)
 end
 
 -- 把玩家选中的选项还原成牌的类型。
--- 【注意】正常情况下回传的是原始键（如 "j_xuyou_kuangyan:basic"），
+-- 【注意】正常情况下回传的是原始键（如 "j_xuyou_kuangyan__basic"），
 -- 但个别客户端可能回传翻译后的文本，这里两种都认，避免"选了却没生效"。
 local function resolveType(choice)
   if choice == nil or choice == "" or choice == "Cancel" then return nil end
@@ -209,7 +220,7 @@ j_xuyou_kuangyan:addTest(function(room, me)
     local origChoice = room.askToChoice
     room.askToChoice = function(self, who, params)
       if params.skill_name == j_xuyou_kuangyan.name then
-        return "j_xuyou_kuangyan:basic"
+        return "j_xuyou_kuangyan__basic"
       end
       return origChoice(self, who, params)
     end
@@ -325,7 +336,7 @@ j_xuyou_kuangyan:addTest(function(room, me)
         asked = asked + 1
         nAll = #(params.all_choices or params.choices)
         nAvail = #params.choices
-        return "j_xuyou_kuangyan:basic"
+        return "j_xuyou_kuangyan__basic"
       end
       return origChoice(self, who, params)
     end
@@ -401,7 +412,7 @@ j_xuyou_kuangyan:addTest(function(room, me)
     local origChoice = room.askToChoice
     room.askToChoice = function(self, who, params)
       if params.skill_name == j_xuyou_kuangyan.name then
-        return Fk:translate("j_xuyou_kuangyan:basic")   -- 回传翻译文本
+        return Fk:translate("j_xuyou_kuangyan__basic")   -- 回传翻译文本
       end
       return origChoice(self, who, params)
     end

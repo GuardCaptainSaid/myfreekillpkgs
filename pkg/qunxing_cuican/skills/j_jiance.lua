@@ -9,8 +9,8 @@ Fk:loadTranslationTable{
   ["#j_jiance-invoke"] = "谏策：是否发动？",
   ["#j_jiance-discard"] = "谏策：弃置 %arg 张牌",
   ["#j_jiance-choice"] = "谏策：令其选择一项",
-  ["j_jiance:draw"] = "令你摸 y 张牌",
-  ["j_jiance:dismantle"] = "令你视为对其使用 y 张【过河拆桥】",
+  ["j_jiance__draw"] = "令你摸 y 张牌",
+  ["j_jiance__dismantle"] = "令你视为对其使用 y 张【过河拆桥】",
   ["#j_jiance-dismantle"] = "谏策：对 %arg 使用【过河拆桥】",
 
   ["$j_jiance1"] = "进言献策，愿君采纳。",
@@ -64,11 +64,11 @@ j_jiance:addEffect(fk.CardUsing, {
 
     -- 令其选择一项
     local choice = room:askToChoice(target, {
-      choices = { "j_jiance:draw", "j_jiance:dismantle" },
+      choices = { "j_jiance__draw", "j_jiance__dismantle" },
       skill_name = j_jiance.name,
       prompt = "#j_jiance-choice",
     })
-    if choice == "j_jiance:draw" then
+    if choice == "j_jiance__draw" then
       -- 令你摸 y 张牌
       player:drawCards(y, j_jiance.name)
     else
@@ -120,7 +120,7 @@ j_jiance:addTest(function(room, me)
     local before = #hand
     local trick = Fk:cloneCard("dismantlement")
     local use = UseCardData:new{ from = comp2, card = trick, tos = { me } }
-    FkTest.setNextReplies(me, { "1", { hand[1], hand[2], hand[3] }, { "j_jiance:draw" } })
+    FkTest.setNextReplies(me, { "1", { hand[1], hand[2], hand[3] }, { "j_jiance__draw" } })
     room.logic:trigger(fk.CardUsing, comp2, use)
     lu.assertEquals(#me:getCardIds("h"), before - 3 + 2, "弃3摸2后手牌应-1")
     lu.assertEquals(me:getMark("j_jiance_count"), 1, "谏策发动次数应记为1")
@@ -132,7 +132,7 @@ j_jiance:addTest(function(room, me)
     local before = #me:getCardIds("h")
     local trick = Fk:cloneCard("dismantlement")
     local use = UseCardData:new{ from = comp2, card = trick, tos = { me } }
-    FkTest.setNextReplies(me, { "1", { "j_jiance:draw" } })
+    FkTest.setNextReplies(me, { "1", { "j_jiance__draw" } })
     room.logic:trigger(fk.CardUsing, comp2, use)
     lu.assertEquals(#me:getCardIds("h"), before + 2, "x>2时弃0张且摸2")
     room:setPlayerMark(me, "j_jiance_count", 0)
@@ -165,7 +165,7 @@ j_jiance:addTest(function(room, me)
     local use = UseCardData:new{ from = comp2, card = trick, tos = { me } }
     -- 弃牌与拆牌由使用者（me）选择；选项由目标（comp2）选择
     FkTest.setNextReplies(me, { "1", { hand[1], hand[2], hand[3] }, compHand[1], compHand[2] })
-    FkTest.setNextReplies(comp2, { { "j_jiance:dismantle" } })
+    FkTest.setNextReplies(comp2, { { "j_jiance__dismantle" } })
     room.logic:trigger(fk.CardUsing, comp2, use)
     lu.assertEquals(#comp2:getCardIds("h"), 1, "2张过河拆桥应拆掉使用者2张牌")
   end)
