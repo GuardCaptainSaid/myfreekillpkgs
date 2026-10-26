@@ -24,7 +24,8 @@ local KUANGYAN = "j_xuyou_kuangyan"
 Fk:loadTranslationTable{
   ["j_xuyou_jugong"] = "倨功",
   [":j_xuyou_jugong"] = "每名角色的回合限一次，当其他角色于其回合内首次造成伤害或获得牌时，" ..
-    "你可以发动一次“狂言”，然后其下次使用牌的目标必须包含你，且该牌无距离和次数限制。",
+    "你可以发动一次“狂言”，然后其下次使用牌的目标必须包含你，且该牌无距离和次数限制。" ..
+    "（其摸牌阶段的摸牌不计入首次获得牌）",
 
   [MUST] = "倨功",
   ["#j_xuyou_jugong-invoke"] = "倨功：是否发动一次“狂言”，并令 %src 下次使用牌必须包含你？",
@@ -116,13 +117,20 @@ j_xuyou_jugong:addEffect(fk.Damaged, {
 
 -- 触发②：其他角色获得牌
 -- 只取"本回合还没被记过"的角色，否则同一批移动里第一个人挡在前面会让技能永远不触发
+-- 【注意】摸牌阶段的正常摸牌不算"获得牌"（否则每名角色每个回合都会白送一次发动机会）。
+-- 写法参照官方 julian.lua：moveReason == ReasonDraw 且移动时正处于其摸牌阶段 → 跳过。
+local function isPhaseDraw(move)
+  return move.moveReason == fk.ReasonDraw and move.to ~= nil and move.to.phase == Player.Draw
+end
+
 local function findGainFrom(player, data)
   for _, move in ipairs(data) do
     local to = move.to
     if to and to ~= player and not to.dead
       and move.toArea == Card.PlayerHand
       and move.from ~= to
-      and to:getMark(FIRST_GAIN) == 0 then
+      and to:getMark(FIRST_GAIN) == 0
+      and not isPhaseDraw(move) then
       return to
     end
   end
@@ -356,6 +364,77 @@ j_xuyou_jugong:addTest(function(room, me)
     comp2:drawCards(1, "test")
     lu.assertEquals(me:getMark(USED), 1, "其他角色摸牌应能触发倨功")
     lu.assertTrue(comp2:getMark(MUST) > 0, "摸牌的角色应被挂上标记")
+  end)
+end)
+
+-- 测试8：摸牌阶段的正常摸牌不算"首次获得牌"（否则每人每回合都会白送一次）
+j_xuyou_jugong:addTest(function(room, me)
+  local comp2 = room.players[2]
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, { j_xuyou_jugong.name, KUANGYAN })
+    room.current = comp2
+    me.phase = Player.Idle
+    me.hp = me.maxHp
+    room:setPlayerMark(me, USED, 0)
+    room:setPlayerMark(comp2, FIRST_GAIN, 0)
+    table.shuffle(room.draw_pile)
+  end)
+  FkTest.runInRoom(function()
+    comp2.phase = Player.Draw
+    FkTest.setNextReplies(me, { "1" })
+    room:drawCards(comp2, 2, "phase_draw")
+    lu.assertEquals(me:getMark(USED), 0, "摸牌阶段的摸牌不应触发倨功, USED=" .. tostring(me:getMark(USED)))
+    lu.assertEquals(comp2:getMark(MUST), 0, "摸牌阶段不应挂标记")
+
+    -- 摸牌阶段结束后（非摸牌阶段）获得的牌仍然照常触发
+    comp2.phase = Player.Play
+    FkTest.setNextReplies(me, { "1" })
+    comp2:drawCards(1, "test")
+    lu.assertEquals(me:getMark(USED), 1, "非摸牌阶段的摸牌应能触发倨功")
+    lu.assertTrue(comp2:getMark(MUST) > 0, "应挂上必须包含标记")
+  end)
+end)
+
+-- 测试9：倨功发动时若狂言为阴形态，必须弹出保留牌型的选择（而不是悄悄跳过）
+j_xuyou_jugong:addTest(function(room, me)
+  local comp2 = room.players[2]
+  local comp3 = room.players[3]
+  local asked = 0
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, { j_xuyou_jugong.name, KUANGYAN })
+    room.current = comp2
+    me.hp = me.maxHp
+    comp3.hp = comp3.maxHp
+    room:setPlayerMark(me, USED, 0)
+    room:setPlayerMark(comp2, FIRST_DMG, 0)
+    -- 阴形态
+    room:setPlayerMark(me, MarkEnum.SwithSkillPreName .. KUANGYAN, 1)
+    for _, id in ipairs(me:getCardIds("h")) do
+      room:moveCardTo(id, Card.DiscardPile, nil, fk.ReasonDiscard, "test")
+    end
+    room:obtainCard(me, {
+      room:printCard("slash", Card.Spade, 3).id,
+      room:printCard("dismantlement", Card.Club, 5).id,
+      room:printCard("qinggang_sword", Card.Diamond, 6).id,
+    }, true, fk.ReasonDraw, me, "test")
+    local origChoice = room.askToChoice
+    room.askToChoice = function(self, who, params)
+      if params.skill_name == KUANGYAN then
+        asked = asked + 1
+        return "j_xuyou_kuangyan:basic"
+      end
+      return origChoice(self, who, params)
+    end
+  end)
+  FkTest.runInRoom(function()
+    FkTest.setNextReplies(me, { "1" })
+    room:damage{ from = comp2, to = comp3, damage = 1, damageType = fk.NormalDamage }
+    lu.assertEquals(asked, 1, "倨功触发阴形态狂言应弹出保留牌型选择")
+    local seen = {}
+    for _, id in ipairs(me:getCardIds("h")) do
+      seen[Fk:getCardById(id).type] = true
+    end
+    lu.assertTrue(seen[Card.TypeTrick] == nil, "选基本牌后锦囊牌应被弃置")
   end)
 end)
 

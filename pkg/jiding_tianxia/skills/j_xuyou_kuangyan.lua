@@ -15,6 +15,9 @@ local TYPE_CHOICES = {
   [Card.TypeEquip] = "j_xuyou_kuangyan:equip",
 }
 
+-- 固定顺序：基本 → 锦囊 → 装备（选项顺序稳定，玩家不会因为顺序变化选错）
+local TYPE_ORDER = { Card.TypeBasic, Card.TypeTrick, Card.TypeEquip }
+
 Fk:loadTranslationTable{
   ["j_xuyou_kuangyan"] = "狂言",
   [":j_xuyou_kuangyan"] = "转换技，出牌阶段限一次。阴：你保留一种类型的牌，弃置其余牌，然后摸等量的牌；" ..
@@ -46,36 +49,65 @@ local function hasAllTypes(player)
   return seen[Card.TypeBasic] and seen[Card.TypeTrick] and seen[Card.TypeEquip]
 end
 
+-- 把玩家选中的选项还原成牌的类型。
+-- 【注意】正常情况下回传的是原始键（如 "j_xuyou_kuangyan:basic"），
+-- 但个别客户端可能回传翻译后的文本，这里两种都认，避免"选了却没生效"。
+local function resolveType(choice)
+  if choice == nil or choice == "" or choice == "Cancel" then return nil end
+  for _, t in ipairs(TYPE_ORDER) do
+    local key = TYPE_CHOICES[t]
+    if choice == key or choice == Fk:translate(key) then return t end
+  end
+  return nil
+end
+
 -- 阴：保留一种类型的牌，弃置其余，摸等量
 local function doYin(room, player)
   local handIds = player:getCardIds("h")
-  local keepType
-  if #handIds > 0 then
-    -- 只列出手中真实存在的类型
-    local choices, seen = {}, {}
+  if #handIds == 0 then return end
+
+  -- 手里实际存在的类型
+  local has = {}
+  for _, id in ipairs(handIds) do
+    has[Fk:getCardById(id).type] = true
+  end
+  local choices = {}
+  for _, t in ipairs(TYPE_ORDER) do
+    if has[t] then table.insert(choices, TYPE_CHOICES[t]) end
+  end
+  if #choices == 0 then return end
+
+  -- 【重要】必须传 all_choices：
+  -- ① 只有一种类型时引擎不会再"自动替你选"直接返回（那种情况下玩家根本看不到选择框，
+  --    表现为"狂言阴没让我选保留的牌型"）；
+  -- ② 三种类型会全部列出来（没有的置灰），玩家能一眼看清自己在选什么。
+  local choice = room:askToChoice(player, {
+    choices = choices,
+    all_choices = { TYPE_CHOICES[Card.TypeBasic], TYPE_CHOICES[Card.TypeTrick], TYPE_CHOICES[Card.TypeEquip] },
+    detailed = true,
+    skill_name = j_xuyou_kuangyan.name,
+    prompt = "#j_xuyou_kuangyan-keep",
+    cancelable = false,
+  })
+  local keepType = resolveType(choice)
+  if keepType == nil then
+    -- 兜底：实在认不出来就保留手里最多的一种类型（保证技能不是"发动了却什么都没发生"）
+    local count = {}
     for _, id in ipairs(handIds) do
       local t = Fk:getCardById(id).type
-      if TYPE_CHOICES[t] and not seen[t] then
-        seen[t] = true
-        table.insert(choices, TYPE_CHOICES[t])
-      end
+      count[t] = (count[t] or 0) + 1
     end
-    if #choices > 0 then
-      local choice = room:askToChoice(player, {
-        choices = choices,
-        skill_name = j_xuyou_kuangyan.name,
-        prompt = "#j_xuyou_kuangyan-keep",
-        cancelable = false,
-      })
-      for t, c in pairs(TYPE_CHOICES) do
-        if c == choice then keepType = t end
-      end
+    local best
+    for _, t in ipairs(TYPE_ORDER) do
+      if count[t] and (best == nil or count[t] > count[best]) then best = t end
     end
+    keepType = best
+    if keepType == nil then return end
   end
 
   local discardIds = {}
   for _, id in ipairs(handIds) do
-    if keepType and Fk:getCardById(id).type ~= keepType then
+    if Fk:getCardById(id).type ~= keepType then
       table.insert(discardIds, id)
     end
   end
@@ -266,7 +298,7 @@ j_xuyou_kuangyan:addTest(function(room, me)
   end)
 end)
 
--- 测试4（真实发动）：阴形态下点狂言，走的是"保留一种类型"分支，且翻转为阳
+-- 测试4（真实发动）：阴形态下点狂言，必须弹出"保留牌型"的选择，弃掉其余类型
 j_xuyou_kuangyan:addTest(function(room, me)
   local slashId, trickId, equipId
   FkTest.runInRoom(function()
@@ -274,6 +306,9 @@ j_xuyou_kuangyan:addTest(function(room, me)
     room.current = me
     me.phase = Player.Play
     room:setPlayerMark(me, MarkEnum.SwithSkillPreName .. j_xuyou_kuangyan.name, 1)  -- 阴
+    for _, id in ipairs(me:getCardIds("h")) do
+      room:moveCardTo(id, Card.DiscardPile, nil, fk.ReasonDiscard, "test")
+    end
     slashId = room:printCard("slash", Card.Spade, 3).id
     trickId = room:printCard("dismantlement", Card.Club, 5).id
     equipId = room:printCard("qinggang_sword", Card.Diamond, 6).id
@@ -283,23 +318,98 @@ j_xuyou_kuangyan:addTest(function(room, me)
     local sk = Fk.skills[j_xuyou_kuangyan.name]
     lu.assertTrue(sk:isInstanceOf(ActiveSkill), "狂言主技能应是主动技")
     lu.assertTrue(sk:canUse(me), "阴形态下狂言应可发动")
+    local asked, nAll, nAvail = 0, 0, 0
     local origChoice = room.askToChoice
     room.askToChoice = function(self, who, params)
       if params.skill_name == j_xuyou_kuangyan.name then
+        asked = asked + 1
+        nAll = #(params.all_choices or params.choices)
+        nAvail = #params.choices
         return "j_xuyou_kuangyan:basic"
       end
       return origChoice(self, who, params)
     end
-    room:useSkill(me, sk, function()
-      sk:onUse(room, { from = me, tos = {}, cards = {}, cost_data = {} })
-    end, {})
+    -- 走真实的主动技使用路径（引擎会写入"发动前形态"）
+    local use = { from = me, tos = {}, cards = {} }
+    room:useSkill(me, sk, function() sk:onUse(room, use) end, use)
     room.askToChoice = origChoice
+    lu.assertEquals(asked, 1, "阴形态必须弹出保留牌型的选择")
+    lu.assertEquals(nAll, 3, "三种类型应全部列出（手里没有的置灰）")
+    lu.assertEquals(nAvail, 3, "三种类型都有时应都可选")
     local hand = me:getCardIds("h")
-    lu.assertTrue(table.contains(hand, slashId), "阴形态应保留选中的基本牌")
+    lu.assertTrue(table.contains(hand, slashId), "选中的基本牌应保留")
+    lu.assertFalse(table.contains(hand, trickId), "锦囊牌应被弃置")
+    lu.assertFalse(table.contains(hand, equipId), "装备牌应被弃置")
     lu.assertEquals(me:getSwitchSkillState(j_xuyou_kuangyan.name), fk.SwitchYang,
       "阴形态发动后应翻转为阳")
-    -- 出牌阶段限一次
     lu.assertFalse(sk:canUse(me), "出牌阶段已用过后不应再用")
+  end)
+end)
+
+-- 测试5：手里只有一种类型时也必须弹出选择框（否则引擎会静默替你选，玩家根本看不到框）
+j_xuyou_kuangyan:addTest(function(room, me)
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_xuyou_kuangyan.name)
+    room.current = me
+    me.phase = Player.Play
+    for _, id in ipairs(me:getCardIds("h")) do
+      room:moveCardTo(id, Card.DiscardPile, nil, fk.ReasonDiscard, "test")
+    end
+    room:obtainCard(me, {
+      room:printCard("slash", Card.Spade, 3).id,
+      room:printCard("jink", Card.Heart, 4).id,
+    }, true, fk.ReasonDraw, me, "test")
+  end)
+  FkTest.runInRoom(function()
+    -- 监听真正发请求的 askToChoices：
+    -- askToChoice 在"只有 1 个可选项"时会直接返回、不发请求（玩家根本看不到框），
+    -- 只有传了 all_choices 才会走到这里。
+    local asked, nAvail, nAll = 0, 0, 0
+    local origChoices = room.askToChoices
+    room.askToChoices = function(self, who, params)
+      if params.skill_name == j_xuyou_kuangyan.name then
+        asked = asked + 1
+        nAvail = #params.choices
+        nAll = #(params.all_choices or params.choices)
+        return { params.choices[1] }
+      end
+      return origChoices(self, who, params)
+    end
+    j_xuyou_kuangyan.do_yin(room, me)
+    room.askToChoices = origChoices
+    lu.assertEquals(asked, 1, "只有一种类型时也必须真的弹出选择框")
+    lu.assertEquals(nAll, 3, "三种类型应全部列出（没有的置灰）")
+    lu.assertEquals(nAvail, 1, "只有基本牌可选")
+    lu.assertEquals(#me:getCardIds("h"), 2, "只有一种类型时不应弃牌")
+  end)
+end)
+
+-- 测试6：客户端若回传翻译后的文本（而非原始键），也要能正确识别
+j_xuyou_kuangyan:addTest(function(room, me)
+  local slashId, trickId
+  FkTest.runInRoom(function()
+    room:handleAddLoseSkills(me, j_xuyou_kuangyan.name)
+    room.current = me
+    for _, id in ipairs(me:getCardIds("h")) do
+      room:moveCardTo(id, Card.DiscardPile, nil, fk.ReasonDiscard, "test")
+    end
+    slashId = room:printCard("slash", Card.Spade, 3).id
+    trickId = room:printCard("dismantlement", Card.Club, 5).id
+    room:obtainCard(me, { slashId, trickId }, true, fk.ReasonDraw, me, "test")
+  end)
+  FkTest.runInRoom(function()
+    local origChoice = room.askToChoice
+    room.askToChoice = function(self, who, params)
+      if params.skill_name == j_xuyou_kuangyan.name then
+        return Fk:translate("j_xuyou_kuangyan:basic")   -- 回传翻译文本
+      end
+      return origChoice(self, who, params)
+    end
+    j_xuyou_kuangyan.do_yin(room, me)
+    room.askToChoice = origChoice
+    local hand = me:getCardIds("h")
+    lu.assertTrue(table.contains(hand, slashId), "回传翻译文本时也应识别为基本牌并保留")
+    lu.assertFalse(table.contains(hand, trickId), "锦囊牌应被弃置")
   end)
 end)
 
